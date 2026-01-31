@@ -1,0 +1,381 @@
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { createClient } from '@supabase/supabase-js';
+import { Layout } from './components/Layout';
+import { Dashboard } from './components/Dashboard';
+import { ProductInventory } from './components/ProductInventory';
+import { Settings } from './components/Settings';
+import { UserManagement } from './components/UserManagement';
+import { Login } from './components/Login';
+import { AppState, Category, ProductData, User, Language } from './types';
+import { DEFAULT_CATEGORIES, STORAGE_KEY, MOCK_PRODUCTS, TRANSLATIONS } from './constants';
+import { ShieldAlert, RefreshCw } from 'lucide-react';
+
+const SUPABASE_URL = 'https://yxtakzmhxxyqwuppdbmh.supabase.co'; 
+const SUPABASE_ANON_KEY = 'sb_publishable_CrlaPD-RdtOqt6IL0evQEA_P3nvCdjH'; 
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const INITIAL_USERS: User[] = [
+  { id: '1', username: 'admin', password: 'password', role: 'admin', avatar: 'https://picsum.photos/seed/admin/32/32' }
+];
+
+const App: React.FC = () => {
+  const [lastSaved, setLastSaved] = useState<string>('Initializing...');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [diagnostic, setDiagnostic] = useState<{msg: string, code?: string} | null>(null);
+  
+  const [state, setState] = useState<AppState>(() => {
+    const saved = sessionStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          categories: parsed.categories || DEFAULT_CATEGORIES,
+          products: parsed.products || MOCK_PRODUCTS,
+          users: parsed.users || INITIAL_USERS,
+          currentUser: parsed.currentUser || null,
+          view: parsed.view || 'dashboard',
+          language: parsed.language || 'zh',
+          isSyncing: false,
+          cloudConnected: true
+        };
+      } catch (e) { console.error(e); }
+    }
+    return {
+      categories: DEFAULT_CATEGORIES,
+      products: MOCK_PRODUCTS,
+      users: INITIAL_USERS,
+      currentUser: null,
+      view: 'dashboard',
+      language: 'zh',
+      isSyncing: false,
+      cloudConnected: true
+    };
+  });
+
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const t = (key: string) => {
+    const lang = TRANSLATIONS[state.language];
+    if (key.includes('.')) {
+      const parts = key.split('.');
+      return lang[parts[0]]?.[parts[1]] || key;
+    }
+    return lang[key] || key;
+  };
+
+  const fetchFromCloud = useCallback(async (silent = false) => {
+    if (!silent) setIsSyncing(true);
+    try {
+      // 采用更稳健的 Promise.allSettled 避免单一接口挂掉导致全局崩溃
+      const results = await Promise.allSettled([
+        supabase.from('categories').select('*'),
+        supabase.from('products').select('*'),
+        supabase.from('category_templates').select('*'),
+        supabase.from('users').select('*')
+      ]);
+
+      let cloudCats: any[] = [];
+      let cloudProds: any[] = [];
+      let cloudTemplates: any[] = [];
+      let cloudUsers: any[] = [];
+
+      if (results[0].status === 'fulfilled' && !results[0].value.error) cloudCats = results[0].value.data || [];
+      if (results[1].status === 'fulfilled' && !results[1].value.error) cloudProds = results[1].value.data || [];
+      if (results[2].status === 'fulfilled' && !results[2].value.error) cloudTemplates = results[2].value.data || [];
+      if (results[3].status === 'fulfilled' && !results[3].value.error) cloudUsers = results[3].value.data || [];
+
+      // 将品类模板转换为前端需要的 Category.fields 格式
+      const categoriesWithFields = cloudCats.map((cat: any) => {
+        const templates = cloudTemplates.filter((t: any) => t.category_id === cat.id && t.is_active);
+        const fields = templates.map((t: any) => ({
+          id: t.field_key,
+          name: t.field_name,
+          type: t.field_type,
+          required: t.is_required,
+          options: t.options ? Object.values(t.options) : undefined,
+          isSystem: false
+        }));
+        return {
+          ...cat,
+          fields
+        };
+      });
+
+      // 转换产品数据，合并固定字段和 attributes
+      const productsWithAttributes = cloudProds.map((p: any) => {
+        const attributes = p.attributes || {};
+        return {
+          id: p.id,
+          categoryId: p.category_id,
+          createdAt: Number(p.created_at || 0),
+          updatedAt: p.updated_at ? Number(p.updated_at) : undefined,
+          updatedBy: p.updated_by,
+          // 固定字段
+          brand: p.brand || '',
+          model: p.model || '',
+          price: Number(p.price || 0),
+          monthlySales: Number(p.monthly_sales || 0),
+          rating: Number(p.rating || 0),
+          mainImage: p.main_image || '',
+          channel: p.channel || '',
+          shopName: p.shop_name || '',
+          actualPrice: p.actual_price ? Number(p.actual_price) : undefined,
+          // 从 attributes 展开的动态字段
+          ...attributes
+        };
+      });
+
+      setState(prev => ({
+        ...prev,
+        categories: categoriesWithFields.length > 0 ? categoriesWithFields : prev.categories,
+        users: cloudUsers.length > 0 ? cloudUsers : prev.users,
+        products: productsWithAttributes.length > 0 ? productsWithAttributes : prev.products
+      }));
+      setLastSaved(new Date().toLocaleTimeString());
+    } catch (err: any) {
+      console.error("Cloud Sync Process Error:", err);
+      // 防崩溃：即使同步失败也不影响页面显示
+      setDiagnostic({ msg: err?.message || '数据同步失败', code: 'SYNC_ERROR' });
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchFromCloud();
+  }, [fetchFromCloud]);
+
+  const handleProductAdd = async (data: any) => {
+    setIsSyncing(true);
+    try {
+      const { categoryId, ...restData } = data;
+      const now = Date.now();
+      
+      // 分离核心固定字段和动态字段
+      const fixedFields = {
+        id: 'p_' + Math.random().toString(36).substr(2, 9),
+        category_id: categoryId,
+        // 核心字段：所有品类共有
+        brand: restData.brand || '',
+        model: restData.model || '',
+        link_url: restData.linkUrl || '',
+        channel: restData.channel || '',
+        price: Number(restData.price || 0),
+        monthly_sales: Number(restData.monthlySales || 0),
+        rating: Number(restData.rating || 0),
+        main_image: restData.mainImage || '',
+        // 时间戳
+        created_at: now,
+        updated_at: now,
+        updated_by: state.currentUser?.username
+      };
+      
+      // 动态字段放入 attributes (品类特定参数)
+      const dynamicFields = { ...restData };
+      // 移除所有核心字段，只保留品类特定参数
+      delete dynamicFields.brand;
+      delete dynamicFields.model;
+      delete dynamicFields.linkUrl;
+      delete dynamicFields.channel;
+      delete dynamicFields.price;
+      delete dynamicFields.monthlySales;
+      delete dynamicFields.rating;
+      delete dynamicFields.mainImage;
+      // 移除其他可能的非核心字段
+      delete dynamicFields.actualPrice;
+      delete dynamicFields.shopName;
+      
+      const payload = {
+        ...fixedFields,
+        attributes: dynamicFields
+      };
+      
+      const { error } = await supabase.from('products').insert([payload]);
+      if (error) setDiagnostic({ msg: error.message, code: error.code });
+      await fetchFromCloud(true);
+    } catch (err: any) {
+      console.error('Product add error:', err);
+      setDiagnostic({ msg: err?.message || '添加产品失败', code: 'ADD_ERROR' });
+    }
+  };
+
+  const handleProductUpdate = async (id: string, data: any) => {
+    setIsSyncing(true);
+    try {
+      const { categoryId, ...restData } = data;
+      const now = Date.now();
+      
+      // 分离核心固定字段和动态字段
+      const fixedFields = {
+        category_id: categoryId,
+        // 核心字段：所有品类共有
+        brand: restData.brand || '',
+        model: restData.model || '',
+        link_url: restData.linkUrl || '',
+        channel: restData.channel || '',
+        price: Number(restData.price || 0),
+        monthly_sales: Number(restData.monthlySales || 0),
+        rating: Number(restData.rating || 0),
+        main_image: restData.mainImage || '',
+        // 时间戳
+        updated_at: now,
+        updated_by: state.currentUser?.username
+      };
+      
+      // 动态字段放入 attributes (品类特定参数)
+      const dynamicFields = { ...restData };
+      // 移除所有核心字段，只保留品类特定参数
+      delete dynamicFields.brand;
+      delete dynamicFields.model;
+      delete dynamicFields.linkUrl;
+      delete dynamicFields.channel;
+      delete dynamicFields.price;
+      delete dynamicFields.monthlySales;
+      delete dynamicFields.rating;
+      delete dynamicFields.mainImage;
+      // 移除其他可能的非核心字段
+      delete dynamicFields.actualPrice;
+      delete dynamicFields.shopName;
+      
+      const payload = {
+        ...fixedFields,
+        attributes: dynamicFields
+      };
+      
+      const { error } = await supabase.from('products').update(payload).eq('id', id);
+      if (error) setDiagnostic({ msg: error.message, code: error.code });
+      await fetchFromCloud(true);
+    } catch (err: any) {
+      console.error('Product update error:', err);
+      setDiagnostic({ msg: err?.message || '更新产品失败', code: 'UPDATE_ERROR' });
+    }
+  };
+
+  const handleProductDelete = async (id: string) => {
+    setIsSyncing(true);
+    const { error } = await supabase.from('products').delete().eq('id', id);
+    if (error) setDiagnostic({ msg: error.message, code: error.code });
+    await fetchFromCloud(true);
+  };
+
+  const handleUpdateCategories = async (newCategories: Category[]) => {
+    setIsSyncing(true);
+    const { error } = await supabase.from('categories').upsert(newCategories);
+    if (error) setDiagnostic({ msg: error.message, code: error.code });
+    await fetchFromCloud(true);
+  };
+
+  const handleCategoryDelete = async (id: string) => {
+    setIsSyncing(true);
+    const { error } = await supabase.from('categories').delete().eq('id', id);
+    if (error) setDiagnostic({ msg: error.message, code: error.code });
+    await fetchFromCloud(true);
+  };
+
+  const handleUserAdd = async (user: User) => {
+    setIsSyncing(true);
+    const { error } = await supabase.from('users').insert([user]);
+    if (error) setDiagnostic({ msg: error.message, code: error.code });
+    await fetchFromCloud(true);
+  };
+
+  const handleUserUpdate = async (user: User) => {
+    setIsSyncing(true);
+    const { error } = await supabase.from('users').update(user).eq('id', user.id);
+    if (error) setDiagnostic({ msg: error.message, code: error.code });
+    await fetchFromCloud(true);
+  };
+
+  const handleUserDelete = async (id: string) => {
+    setIsSyncing(true);
+    const { error } = await supabase.from('users').delete().eq('id', id);
+    if (error) setDiagnostic({ msg: error.message, code: error.code });
+    await fetchFromCloud(true);
+  };
+
+  const login = (username: string, password: string) => {
+    const user = state.users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
+    if (user) {
+      setState(prev => ({ ...prev, currentUser: { ...user } }));
+      return true;
+    }
+    return false;
+  };
+
+  const logout = () => {
+    setState(prev => ({ ...prev, currentUser: null, view: 'dashboard' }));
+  };
+
+  const setView = (view: AppState['view']) => {
+    if ((view === 'users' || view === 'settings') && state.currentUser?.role !== 'admin') return;
+    setState(prev => ({ ...prev, view }));
+  };
+  
+  const setLanguage = (lang: Language) => setState(prev => ({ ...prev, language: lang }));
+
+  useEffect(() => {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }, [state]);
+
+  if (!state.currentUser) return <Login onLogin={login} language={state.language} t={t} />;
+
+  return (
+    <Layout 
+      currentView={state.view} setView={setView} currentUser={state.currentUser} onLogout={logout}
+      onAddTrigger={() => { setView('inventory'); setIsAddModalOpen(true); }}
+      lastSaved={lastSaved} language={state.language} setLanguage={setLanguage} t={t}
+      isSyncing={isSyncing}
+    >
+      <div className="h-full relative">
+        {diagnostic && (
+          <div className="fixed inset-x-0 top-0 z-[1000] p-4 lg:p-8 animate-in slide-in-from-top duration-700">
+             <div className="max-w-4xl mx-auto bg-slate-900 border border-red-500/30 rounded-[3rem] shadow-2xl overflow-hidden p-8 lg:p-12 space-y-6">
+                <div className="flex items-center gap-5 text-red-500">
+                   <ShieldAlert size={28} />
+                   <h3 className="text-xl font-black uppercase text-white">System Protocol Diagnostic</h3>
+                </div>
+                <div className="bg-black/40 p-6 rounded-3xl border border-white/5 font-mono text-[11px] text-slate-300">
+                   <p className="text-red-400">STATUS_CODE: {diagnostic.code}</p>
+                   <p className="mt-2">MESSAGE: {diagnostic.msg}</p>
+                </div>
+                <div className="flex gap-4">
+                  <button onClick={() => { setDiagnostic(null); fetchFromCloud(); }} className="flex-1 py-5 bg-white text-slate-950 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
+                    <RefreshCw size={14} /> Re-sync Node
+                  </button>
+                  <button onClick={() => setDiagnostic(null)} className="px-10 py-5 bg-slate-800 text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest">Acknowledge</button>
+                </div>
+             </div>
+          </div>
+        )}
+        
+        {state.view === 'dashboard' && <Dashboard products={state.products} categories={state.categories} t={t} />}
+        {state.view === 'inventory' && (
+          <ProductInventory 
+            products={state.products} categories={state.categories} 
+            onAdd={handleProductAdd} onUpdate={handleProductUpdate} onDelete={handleProductDelete}
+            currentUser={state.currentUser} isAddModalOpen={isAddModalOpen} setIsAddModalOpen={setIsAddModalOpen} t={t}
+          />
+        )}
+        {state.view === 'settings' && (
+          <Settings 
+            categories={state.categories} onUpdateCategories={handleUpdateCategories} 
+            onDeleteCategory={handleCategoryDelete}
+            isAdmin={state.currentUser.role === 'admin'} allData={state} t={t} 
+          />
+        )}
+        {state.view === 'users' && (
+          <UserManagement 
+            users={state.users} 
+            onAddUser={handleUserAdd} 
+            onUpdateUser={handleUserUpdate} 
+            onDeleteUser={handleUserDelete}
+            currentUser={state.currentUser} t={t} 
+          />
+        )}
+      </div>
+    </Layout>
+  );
+};
+
+export default App;

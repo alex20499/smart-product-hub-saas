@@ -1,0 +1,107 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Smart Hub | Cloud Protocol</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-main: #0F172A;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --neon-green: #A3E635;
+      --neon-purple: #818CF8;
+    }
+
+    body {
+      font-family: 'Inter', 'Noto Sans SC', sans-serif;
+      background-color: var(--bg-main);
+      color: #F8FAFC;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* 移除点击时的蓝色选择框 */
+    *:focus {
+      outline: none !important;
+    }
+    
+    .recharts-wrapper:focus, .recharts-surface:focus {
+      outline: none !important;
+    }
+
+    /* 针对中文环境的排版美化 */
+    html[lang="zh"] {
+      letter-spacing: -0.01em;
+    }
+    
+    html[lang="zh"] h1, html[lang="zh"] h2, html[lang="zh"] h3, html[lang="zh"] button {
+      font-weight: 900 !important;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 20px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--neon-purple); }
+
+    .glass-sidebar { 
+      background: rgba(15, 23, 42, 0.9); 
+      backdrop-filter: blur(12px); 
+      border-right: 1px solid rgba(255, 255, 255, 0.05);
+      will-change: transform;
+    }
+
+    .premium-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 2.5rem;
+      box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.6);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    
+    .premium-card:hover {
+      border-color: rgba(163, 230, 53, 0.2);
+    }
+
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    
+    /* 拖拽排序视觉 */
+    .draggable-item { cursor: grab; }
+    .draggable-item:active { cursor: grabbing; }
+    .dragging {
+      opacity: 0.4;
+      background: rgba(163, 230, 53, 0.05) !important;
+      border: 1px dashed var(--neon-green) !important;
+    }
+
+    @media print {
+      aside, header, .no-print { display: none !important; }
+      main { width: 100% !important; background: #fff !important; color: #000 !important; }
+    }
+  </style>
+<script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "react": "https://esm.sh/react@^19.2.4",
+    "recharts": "https://esm.sh/recharts@^3.7.0",
+    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.45.0",
+    "@google/genai": "https://esm.sh/@google/genai@^1.38.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="h-screen overflow-hidden">
+  <div id="root"></div>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
