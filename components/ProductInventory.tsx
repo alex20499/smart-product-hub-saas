@@ -37,14 +37,14 @@ const MultiQuantityInput: React.FC<{ options: string[]; value: Record<string, nu
           <div key={opt} className={`flex items-center justify-between p-3 rounded-xl border transition-all ${isChecked ? 'bg-slate-900 border-[#A3E635]/50 shadow-lg shadow-[#A3E635]/5' : 'bg-transparent border-white/5'}`}>
             <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={() => toggleOption(opt)}>
               <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${isChecked ? 'bg-[#A3E635] border-[#A3E635] text-slate-950' : 'bg-slate-950 border-white/10'}`}>{isChecked && <Check size={12} />}</div>
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{opt}</span>
+              <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">{opt}</span>
             </div>
             {isChecked && (
               <div className="flex items-center gap-2 bg-slate-950 rounded-lg p-1 border border-white/5">
                 <input 
                   type="number" 
                   min="0" 
-                  className="w-12 bg-transparent text-[10px] font-black outline-none text-center text-[#A3E635]" 
+                  className="w-12 bg-transparent text-[11px] font-black outline-none text-center text-[#A3E635]" 
                   value={value[opt]} 
                   onChange={e => onChange({...value, [opt]: Math.max(0, parseInt(e.target.value) || 0)})} 
                 />
@@ -80,7 +80,7 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
         ) : (
           <div className="text-center">
             <div className="size-12 bg-slate-950 rounded-2xl flex items-center justify-center text-slate-700 mx-auto mb-3 shadow-inner"><ImageIcon size={24} /></div>
-            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">{placeholder}</p>
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">{placeholder}</p>
           </div>
         )}
         <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />

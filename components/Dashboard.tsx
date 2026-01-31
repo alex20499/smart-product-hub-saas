@@ -227,24 +227,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
   return (
     <div className="space-y-12 lg:space-y-16 pb-40 max-w-[1500px] mx-auto animate-in fade-in duration-1000">
       {/* 顶部控制塔 */}
-      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-8">
+      <div className="flex flex-col xl:flex-row xl:items-end justify-between gap-6 lg:gap-8">
         <div className="text-left space-y-4">
           <div className="flex items-center gap-3">
             <div className="size-10 bg-[#A3E635] rounded-2xl flex items-center justify-center text-slate-950 shadow-[0_0_30_px_rgba(163,230,53,0.3)]">
                <Activity size={20} />
             </div>
-            <h2 className="text-4xl sm:text-6xl font-black tracking-tighter uppercase text-white leading-none italic">{t('market_intel')}</h2>
+            <h2 className="text-3xl sm:text-5xl font-black tracking-tighter uppercase text-white leading-none italic">{t('market_intel')}</h2>
           </div>
-          <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] ml-1">{t('benchmarking_protocol')}</p>
+          <p className="text-[11px] font-black text-slate-500 uppercase tracking-[0.4em] ml-1">{t('benchmarking_protocol')}</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 no-print">
+        <div className="flex flex-wrap items-center gap-3 lg:gap-4 no-print">
           <div className="relative group">
             <Layout size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-hover:text-[#A3E635] transition-colors" />
             <select 
               value={selectedCategory}
               onChange={(e) => { setSelectedCategory(e.target.value); setVisibleProducts(5); setGlobalAiAnalysis(null); }}
-              className="bg-slate-900 border border-white/5 rounded-2xl pl-12 pr-10 py-4 text-[10px] font-black uppercase text-white tracking-widest outline-none focus:border-[#A3E635]/40 appearance-none min-w-[160px] cursor-pointer"
+              className="bg-slate-900 border border-white/5 rounded-2xl pl-12 pr-10 py-3 lg:py-4 text-[10px] lg:text-[11px] font-black uppercase text-white tracking-widest outline-none focus:border-[#A3E635]/40 appearance-none min-w-[140px] lg:min-w-[160px] cursor-pointer"
             >
               <option value="all">{t('category')}</option>
               {categories.map(c => c?.id && c?.name ? <option key={c.id} value={c.id}>{c.name}</option> : null)}
@@ -257,7 +257,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
             <select 
               value={selectedChannel}
               onChange={(e) => { setSelectedChannel(e.target.value); setVisibleProducts(5); setGlobalAiAnalysis(null); }}
-              className="bg-slate-900 border border-white/5 rounded-2xl pl-12 pr-10 py-4 text-[10px] font-black uppercase text-white tracking-widest outline-none focus:border-[#A3E635]/40 appearance-none min-w-[160px] cursor-pointer"
+              className="bg-slate-900 border border-white/5 rounded-2xl pl-12 pr-10 py-3 lg:py-4 text-[10px] lg:text-[11px] font-black uppercase text-white tracking-widest outline-none focus:border-[#A3E635]/40 appearance-none min-w-[140px] lg:min-w-[160px] cursor-pointer"
             >
               <option value="all">{t('global_channels')}</option>
               {channels.map(ch => ch ? <option key={ch} value={ch}>{ch}</option> : null)}
@@ -288,11 +288,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                   {isAiReady ? <Sparkles size={24} /> : <Lock size={24} />}
                </div>
                <div>
-                  <h4 className="text-[12px] font-black uppercase text-white tracking-widest flex items-center gap-2">
+                  <h4 className="text-[13px] font-black uppercase text-white tracking-widest flex items-center gap-2">
                      {t('ai_insights')}
-                     {!isAiReady && <span className="px-2 py-0.5 bg-red-500/10 text-red-500 text-[8px] rounded-md border border-red-500/20 animate-pulse">{t('cancel')}</span>}
+                     {!isAiReady && <span className="px-2 py-0.5 bg-red-500/10 text-red-500 text-[9px] rounded-md border border-red-500/20 animate-pulse">{t('cancel')}</span>}
+                     {isAiReady && <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-[9px] rounded-md border border-green-500/20">✓ 就绪</span>}
                   </h4>
-                  <p className={`text-[9px] font-black uppercase tracking-widest mt-1 ${isAiReady ? 'text-[#A3E635]' : 'text-slate-600'}`}>
+                  <p className={`text-[10px] font-black uppercase tracking-widest mt-1 ${isAiReady ? 'text-[#A3E635]' : 'text-slate-600'}`}>
                      {isAiReady ? t('ai_ready') : t('ai_lock_hint')}
                   </p>
                </div>
@@ -301,7 +302,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
             <button 
               onClick={handleMarketAIAnalysis}
               disabled={!isAiReady || isGlobalAnalyzing}
-              className={`px-12 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-3 ${isAiReady ? 'bg-white text-slate-950 hover:bg-[#A3E635]' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
+              className={`px-12 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-3 shadow-lg ${isAiReady ? 'bg-white text-slate-950 hover:bg-[#A3E635] hover:shadow-[#A3E635]/25' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
             >
                {isGlobalAnalyzing ? <RefreshCw className="animate-spin" size={14} /> : <Zap size={14} />}
                {t('generate_insight')}
@@ -309,10 +310,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
          </div>
 
          {globalAiAnalysis && (
-           <div className="mt-10 p-8 bg-slate-950/50 rounded-[2.5rem] border border-white/5 animate-in slide-in-from-top duration-500">
+           <div className="mt-10 p-6 lg:p-8 bg-slate-950/50 rounded-[2.5rem] border border-white/5 animate-in slide-in-from-top duration-500">
               <div className="flex items-center gap-3 mb-6 text-[#A3E635]">
                  <MessageSquare size={16} />
-                 <span className="text-[10px] font-black uppercase tracking-[0.3em]">{t('ai_tactical_analysis')}</span>
+                 <p className="text-[11px] font-black uppercase tracking-widest">{t('ai_analysis')}</p>
+                 <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-[9px] rounded-md border border-green-500/20">✓ 完成</span>
               </div>
               <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap italic font-medium text-left">
                  {globalAiAnalysis}
@@ -670,7 +672,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                  <div className="space-y-12">
                     <div className="flex items-center gap-4 border-b border-white/5 pb-4">
                        <Database size={18} className="text-slate-500" />
-                       <h4 className="text-[11px] font-black text-white uppercase tracking-[0.3em]">{t('full_node_data')}</h4>
+                       <p className="text-[11px] font-black text-white uppercase tracking-[0.3em]">{t('full_node_data')}</p>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
