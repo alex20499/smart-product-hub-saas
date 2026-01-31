@@ -53,7 +53,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
       <div className="absolute top-1/4 left-1/4 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-[#A3E635]/5 rounded-full blur-[120px] -z-10 animate-pulse"></div>
       <div className="absolute bottom-1/4 right-1/4 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-[#818CF8]/5 rounded-full blur-[120px] -z-10"></div>
 
-      <div className="premium-card w-full max-w-md p-6 sm:p-10 space-y-6 sm:space-y-8 animate-in zoom-in-95 duration-700 border-white/10 shadow-[0_50px_100px_rgba(0,0,0,0.8)] relative max-h-[95vh] overflow-y-auto custom-scrollbar">
+      <div className="premium-card w-full max-w-md p-6 sm:p-10 space-y-6 sm:space-y-8 animate-in zoom-in-95 duration-700 border-white/10 shadow-[0_50px_100px_rgba(0,0,0,0.8)] relative">
         {/* 部署节点标签 */}
         <div className="absolute top-5 right-6 flex items-center gap-2 opacity-30">
           <Database size={10} className="text-slate-500" />

@@ -517,8 +517,58 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
         </div>
       )}
 
-      {/* Drawer for Add/Edit */}
-      {(isAddModalOpen || editingId) && (
+      {/* 品类选择模态框 - 独立显示 */}
+      {isAddModalOpen && !selectedCatForAdd && (
+        <>
+           <div className="center-modal-overlay animate-in fade-in duration-300" onClick={handleCloseModal}></div>
+           <div className="center-modal-container p-8 lg:p-12 space-y-8 animate-in zoom-in-95 duration-200 max-w-2xl w-full mx-4">
+              <div className="flex items-center justify-between">
+                 <div>
+                    <h3 className="text-2xl font-black text-white uppercase tracking-tight">{t('new_entry')}</h3>
+                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mt-2">选择产品品类架构</p>
+                 </div>
+                 <button onClick={handleCloseModal} className="size-12 bg-slate-900 border border-white/5 rounded-xl flex items-center justify-center text-slate-500 hover:text-white transition-all"><X size={24} /></button>
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                 {categories.map(cat => {
+                   if (!cat?.id || !cat?.name) return null;
+                   
+                   return (
+                     <button 
+                       key={cat.id} 
+                       onClick={() => setSelectedCatForAdd(cat.id)}
+                       className="w-full flex items-center justify-between p-6 bg-slate-900/50 border border-white/5 rounded-2xl hover:border-[#A3E635]/40 hover:bg-[#A3E635]/5 transition-all group"
+                     >
+                        <div className="flex items-center gap-4">
+                           <div className="size-12 bg-slate-950 rounded-xl flex items-center justify-center text-slate-700 group-hover:bg-[#A3E635] group-hover:text-slate-950 transition-all">
+                             <Package size={20} />
+                           </div>
+                           <div className="text-left">
+                             <span className="font-black text-[11px] uppercase tracking-widest text-white">{cat.name}</span>
+                             {cat?.description && (
+                               <p className="text-[8px] text-slate-500 mt-1">{cat.description}</p>
+                             )}
+                           </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                           {cat?.fields && cat.fields.length > 0 && (
+                             <span className="text-[8px] text-slate-600 bg-slate-800 px-2 py-1 rounded">
+                               {cat.fields.length} 字段
+                             </span>
+                           )}
+                           <ChevronRight className="text-slate-700" size={16} />
+                        </div>
+                     </button>
+                   );
+                 })}
+              </div>
+           </div>
+        </>
+      )}
+
+      {/* 产品表单抽屉 - 选择品类后显示 */}
+      {(selectedCatForAdd || editingId) && (
         <>
            <div className="drawer-overlay animate-in fade-in duration-300" onClick={handleCloseModal}></div>
            <aside className="drawer-container open animate-in slide-in-from-right duration-500">
@@ -529,47 +579,8 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                  </div>
                  <button onClick={handleCloseModal} className="size-12 bg-slate-900 border border-white/5 rounded-xl flex items-center justify-center text-slate-500 hover:text-white transition-all"><X size={24} /></button>
               </div>
-
-              {!selectedCatForAdd && !editingId ? (
-                <div className="flex-1 overflow-y-auto p-10 space-y-6">
-                   <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-10 text-center">{t('select_architecture')}</h4>
-                   <div className="grid grid-cols-1 gap-4">
-                      {categories.map(cat => {
-                        // 防崩溃：确保 category 对象存在
-                        if (!cat?.id || !cat?.name) return null;
-                        
-                        return (
-                          <button 
-                            key={cat.id} 
-                            onClick={() => setSelectedCatForAdd(cat.id)}
-                            className="w-full flex items-center justify-between p-6 bg-slate-900/50 border border-white/5 rounded-2xl hover:border-[#A3E635]/40 hover:bg-[#A3E635]/5 transition-all group"
-                          >
-                             <div className="flex items-center gap-5">
-                                <div className="size-12 bg-slate-950 rounded-xl flex items-center justify-center text-slate-700 group-hover:bg-[#A3E635] group-hover:text-slate-950 transition-all">
-                                  <Package size={20} />
-                                </div>
-                                <div className="text-left">
-                                  <span className="font-black text-[11px] uppercase tracking-widest text-white">{cat.name}</span>
-                                  {cat?.description && (
-                                    <p className="text-[8px] text-slate-500 mt-1">{cat.description}</p>
-                                  )}
-                                </div>
-                             </div>
-                             <div className="flex items-center gap-2">
-                                {cat?.fields && cat.fields.length > 0 && (
-                                  <span className="text-[8px] text-slate-600 bg-slate-800 px-2 py-1 rounded">
-                                    {cat.fields.length} 个字段
-                                  </span>
-                                )}
-                                <ChevronDown className="-rotate-90 text-slate-700" size={16} />
-                             </div>
-                          </button>
-                        );
-                      })}
-                   </div>
-                </div>
-              ) : (
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
+              
+              <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
                    {/* 核心字段区域 - 固定显示在顶部 */}
                    <div className="space-y-8">
                       <div className="flex items-center gap-4 pb-6 border-b border-white/5">
