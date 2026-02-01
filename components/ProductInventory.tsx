@@ -9,6 +9,7 @@ import {
   ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, AlertTriangle, Brain
 } from 'lucide-react';
 import { ProductData, ProductField, FieldType, User, Category } from '../types';
+import { callGemini, simplifyForAI } from '../utils/gemini';
 
 interface ProductInventoryProps {
   products: ProductData[];
@@ -274,45 +275,16 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
     }
   };
   
-  // AI分析函数 - 使用 .env 中的 GEMINI_API_KEY
+  // AI分析函数 - 开发环境走代理，密钥在服务端
   const handleProductAIAnalysis = async (product: ProductData) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      setAiAnalysis('请在 .env 中配置 GEMINI_API_KEY 后重启开发服务器');
-      return;
-    }
     setIsAiAnalyzing(true);
     setAiAnalysis(null);
-    const modelName = "gemini-1.5-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-    
     try {
-      const prompt = `你是一位专业的产品分析师。请分析此单品：${JSON.stringify(product)}。请给出1条实战销售战术，语言精炼。`;
-
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: prompt }]
-          }]
-        })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(`API错误: ${data.error?.message || `状态码: ${response.status}`}`);
-      }
-
-      const aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (aiText) {
-        setAiAnalysis(aiText);
-        console.log('✅ AI 分析成功');
-      } else {
-        setAiAnalysis('AI 响应内容为空');
-      }
-
+      const simple = simplifyForAI(product as Record<string, unknown>);
+      const prompt = `你是一位专业的产品分析师。请分析此单品：${JSON.stringify(simple)}。请给出1条实战销售战术，语言精炼，直接输出建议即可。`;
+      const aiText = await callGemini(prompt);
+      setAiAnalysis(aiText || 'AI 响应内容为空');
+      if (aiText) console.log('✅ AI 分析成功');
     } catch (e: any) {
       console.error('🚨 AI分析失败:', e.message);
       setAiAnalysis(`分析中断: ${e.message}`);
@@ -321,16 +293,10 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
     }
   };
   
-  // AI竞品对策函数 - 使用 .env 中的 GEMINI_API_KEY
+  // AI竞品对策函数 - 开发环境走代理，密钥在服务端
   const handleCompetitorAnalysis = async (product: ProductData) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      setCompetitorAnalysis('请在 .env 中配置 GEMINI_API_KEY 后重启开发服务器');
-      return;
-    }
     setIsCompetitorAnalyzing(true);
     setCompetitorAnalysis(null);
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     try {
       const competitorInfo = {
         name: product.model,
@@ -348,17 +314,11 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       };
       
       const prompt = `你是一位高级产品经理，请深度分析以下竞品信息：${JSON.stringify(competitorInfo)}。请以专业、简洁、可执行的方式回答，重点关注如何利用竞品弱点获得市场优势。`;
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-      const data = await response.json();
-      setCompetitorAnalysis(data.candidates[0].content.parts[0].text);
-    } catch (error) {
+      const text = await callGemini(prompt);
+      setCompetitorAnalysis(text);
+    } catch (error: any) {
       console.error('AI竞品对策错误:', error);
-      setCompetitorAnalysis("AI 竞品分析受阻，请稍后重试。");
+      setCompetitorAnalysis(error?.message ? `分析中断: ${error.message}` : "AI 竞品分析受阻，请稍后重试。");
     } finally {
       setIsCompetitorAnalyzing(false);
     }
