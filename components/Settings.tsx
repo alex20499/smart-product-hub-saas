@@ -59,7 +59,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
       required: false, 
       options: isOptionType ? newFieldOptions.split(',').map(s => s.trim()).filter(Boolean) : undefined 
     };
-    onUpdateCategories(categories.map(c => c.id === selectedCategoryId ? { ...c, fields: [...c.fields, newField] } : c));
+    onUpdateCategories(categories.map(c => c.id === selectedCategoryId ? { ...c, fields: [...(c.fields ?? []), newField] } : c));
     setNewFieldName(''); 
     setNewFieldOptions(''); 
     setNewFieldType(FieldType.TEXT);
@@ -76,7 +76,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
   const saveEditField = () => {
     if (!canEdit || !selectedCategory || !isEditing) return;
     const isOptionType = editFieldType === FieldType.SELECT || editFieldType === FieldType.MULTI_SELECT_QUANTITY;
-    onUpdateCategories(categories.map(c => c.id === selectedCategoryId ? { ...c, fields: c.fields.map(f => f.id === isEditing ? { 
+    onUpdateCategories(categories.map(c => c.id === selectedCategoryId ? { ...c, fields: (c.fields ?? []).map(f => f.id === isEditing ? { 
       ...f, 
       name: editFieldName, 
       type: editFieldType, 
@@ -124,23 +124,23 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
   const requiresOptions = (type: FieldType) => type === FieldType.SELECT || type === FieldType.MULTI_SELECT_QUANTITY;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-12 animate-in fade-in duration-700 pb-40">
-      <div className="premium-card p-8 lg:p-12 flex flex-col md:flex-row items-center justify-between gap-10 border-white/5">
-        <div className="flex items-center gap-6 text-left w-full">
-          <div className="bg-[#818CF8]/20 p-5 rounded-[2rem] text-[#818CF8] border border-[#818CF8]/20 shrink-0"><Database className="w-8 h-8" /></div>
+    <div className="max-w-6xl mx-auto space-y-6 sm:space-y-12 animate-in fade-in duration-700 pb-24 sm:pb-40">
+      <div className="premium-card p-4 sm:p-6 lg:p-12 flex flex-col md:flex-row items-center justify-between gap-4 sm:gap-10 border-white/5">
+        <div className="flex items-center gap-4 sm:gap-6 text-left w-full">
+          <div className="bg-[#818CF8]/20 p-3 sm:p-5 rounded-xl sm:rounded-[2rem] text-[#818CF8] border border-[#818CF8]/20 shrink-0"><Database className="w-6 h-6 sm:w-8 sm:h-8" /></div>
           <div>
-            <h1 className="text-3xl font-black text-white tracking-tighter uppercase leading-tight">{t('settings')}</h1>
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] mt-1">Research Matrix Architect</p>
+            <h1 className="text-xl sm:text-3xl font-black text-white tracking-tighter uppercase leading-tight">{t('settings')}</h1>
+            <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] sm:tracking-[0.4em] mt-1">Research Matrix Architect</p>
           </div>
         </div>
       </div>
 
       {!selectedCategoryId ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
           {categories.map(cat => (
-            <div key={cat.id} className="premium-card group p-10 flex flex-col border-white/5 bg-slate-900/40 relative">
-               <div className="flex items-center justify-between mb-8">
-                  <div className="w-16 h-16 bg-slate-950 rounded-3xl flex items-center justify-center text-slate-700 group-hover:bg-[#A3E635] group-hover:text-slate-950 transition-all shadow-inner"><LayoutGrid size={32} /></div>
+            <div key={cat.id} className="premium-card group p-5 sm:p-8 lg:p-10 flex flex-col border-white/5 bg-slate-900/40 relative">
+               <div className="flex items-center justify-between mb-4 sm:mb-8">
+                  <div className="w-12 h-12 sm:w-16 sm:h-16 bg-slate-950 rounded-2xl sm:rounded-3xl flex items-center justify-center text-slate-700 group-hover:bg-[#A3E635] group-hover:text-slate-950 transition-all shadow-inner"><LayoutGrid size={24} className="sm:w-8 sm:h-8" /></div>
                   {canEdit && (
                     <button 
                       onClick={(e) => { e.stopPropagation(); if(confirm(t('delete_confirm'))) onDeleteCategory(cat.id); }} 
@@ -150,34 +150,34 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                     </button>
                   )}
                </div>
-               <h3 className="text-2xl font-black text-white uppercase tracking-tight mb-6">{cat.name}</h3>
-               <button onClick={() => setSelectedCategoryId(cat.id)} className="w-full mt-auto py-5 bg-slate-800/50 text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] group-hover:bg-white group-hover:text-slate-950 transition-all flex items-center justify-center gap-3 border border-white/5">
-                 <Settings2 size={16} /> {t('edit')}
+               <h3 className="text-lg sm:text-2xl font-black text-white uppercase tracking-tight mb-4 sm:mb-6">{cat.name}</h3>
+               <button onClick={() => setSelectedCategoryId(cat.id)} className="w-full mt-auto py-4 sm:py-5 bg-slate-800/50 text-slate-400 rounded-xl sm:rounded-2xl font-black text-[10px] uppercase tracking-[0.3em] group-hover:bg-white group-hover:text-slate-950 transition-all flex items-center justify-center gap-3 border border-white/5">
+                 <Settings2 size={14} className="sm:w-4 sm:h-4 shrink-0" /> {t('edit')}
                </button>
             </div>
           ))}
           
           {canEdit && (
-            <div className="premium-card p-10 border-dashed border-white/10 flex flex-col items-center justify-center gap-6 bg-slate-900/20">
-              <input placeholder="NEW CATEGORY NAME..." className="bg-slate-900 border border-white/5 rounded-2xl px-8 py-5 text-[11px] font-black uppercase w-full text-white tracking-widest outline-none focus:border-[#A3E635]/30" value={newCatName} onChange={e => setNewCatName(e.target.value)} />
-              <button onClick={addCategory} className="w-full py-5 bg-[#A3E635] text-slate-950 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-3">
-                <Plus size={16} /> {t('new_entry')}
+            <div className="premium-card p-5 sm:p-8 lg:p-10 border-dashed border-white/10 flex flex-col items-center justify-center gap-4 sm:gap-6 bg-slate-900/20">
+              <input placeholder="NEW CATEGORY NAME..." className="bg-slate-900 border border-white/5 rounded-xl sm:rounded-2xl px-4 sm:px-8 py-3.5 sm:py-5 text-[10px] sm:text-[11px] font-black uppercase w-full text-white tracking-widest outline-none focus:border-[#A3E635]/30" value={newCatName} onChange={e => setNewCatName(e.target.value)} />
+              <button onClick={addCategory} className="w-full py-4 sm:py-5 bg-[#A3E635] text-slate-950 rounded-xl sm:rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-xl hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-3">
+                <Plus size={14} className="sm:w-4 sm:h-4 shrink-0" /> {t('new_entry')}
               </button>
             </div>
           )}
         </div>
       ) : (
-        <div className="space-y-10 animate-in slide-in-from-right-10 duration-500">
-          <div className="flex items-center gap-6">
-            <button onClick={() => setSelectedCategoryId(null)} className="w-14 h-14 bg-slate-800 text-slate-400 hover:text-white rounded-2xl border border-white/5 flex items-center justify-center transition-all active:scale-90 shadow-xl"><ChevronLeft size={28} /></button>
-            <div className="text-left">
-              <h2 className="text-3xl font-black text-white uppercase tracking-tighter truncate">{selectedCategory?.name}</h2>
-              <p className="text-[10px] font-black text-[#A3E635] uppercase tracking-[0.4em] mt-1">{t('node_definition_mode')}</p>
+        <div className="space-y-6 sm:space-y-10 animate-in slide-in-from-right-10 duration-500">
+          <div className="flex items-center gap-4 sm:gap-6">
+            <button onClick={() => setSelectedCategoryId(null)} className="w-12 h-12 sm:w-14 sm:h-14 bg-slate-800 text-slate-400 hover:text-white rounded-xl sm:rounded-2xl border border-white/5 flex items-center justify-center transition-all active:scale-90 shadow-xl shrink-0"><ChevronLeft size={24} className="sm:w-7 sm:h-7" /></button>
+            <div className="text-left min-w-0">
+              <h2 className="text-xl sm:text-3xl font-black text-white uppercase tracking-tighter truncate">{selectedCategory?.name}</h2>
+              <p className="text-[9px] sm:text-[10px] font-black text-[#A3E635] uppercase tracking-[0.3em] sm:tracking-[0.4em] mt-1">{t('node_definition_mode')}</p>
             </div>
           </div>
           
           <div className="premium-card overflow-hidden flex flex-col border-white/5 bg-slate-900/30">
-             <div className="p-8 border-b border-white/5">
+             <div className="p-4 sm:p-6 lg:p-8 border-b border-white/5">
                 <div className="flex items-center gap-4 mb-6">
                    <div className="size-10 bg-[#A3E635]/10 rounded-xl flex items-center justify-center">
                       <Package size={20} className="text-[#A3E635]" />
@@ -219,7 +219,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                 </div>
              </div>
              
-             <div className="divide-y divide-white/5 p-8 max-h-[600px] overflow-y-auto custom-scrollbar">
+             <div className="divide-y divide-white/5 p-4 sm:p-6 lg:p-8 max-h-[50vh] sm:max-h-[600px] overflow-y-auto custom-scrollbar">
                 <div className="flex items-center gap-4 mb-6">
                    <div className="size-10 bg-indigo-500/10 rounded-xl flex items-center justify-center">
                       <Settings2 size={20} className="text-indigo-400" />
@@ -229,14 +229,14 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                       <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">{selectedCategory?.name} 特有属性</p>
                    </div>
                 </div>
-               {selectedCategory?.fields.map((field, index) => (
+               {(selectedCategory?.fields ?? []).map((field, index) => (
                  <div 
                    key={field.id} 
                    draggable={!isEditing}
                    onDragStart={() => onDragStart(index)}
                    onDragOver={(e) => onDragOver(e, index)}
                    onDragEnd={onDragEnd}
-                   className={`group draggable-item flex flex-col md:flex-row md:items-center justify-between py-6 px-6 rounded-3xl hover:bg-white/5 transition-all gap-6 ${draggedIndex === index ? 'dragging' : ''}`}
+                   className={`group draggable-item flex flex-col md:flex-row md:items-center justify-between py-4 sm:py-6 px-4 sm:px-6 rounded-2xl sm:rounded-3xl hover:bg-white/5 transition-all gap-4 sm:gap-6 ${draggedIndex === index ? 'dragging' : ''}`}
                  >
                    <div className="flex items-center gap-6 flex-1 text-left">
                      {/* 排序控制组 */}
@@ -255,8 +255,8 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                              </button>
                              <button 
                                onClick={() => moveField(index, 'down')} 
-                               disabled={index === (selectedCategory.fields.length - 1)}
-                               className={`p-1 rounded-md transition-all ${index === (selectedCategory.fields.length - 1) ? 'text-slate-900 cursor-not-allowed' : 'text-slate-600 hover:text-[#A3E635] hover:bg-white/5'}`}
+                               disabled={index === ((selectedCategory?.fields ?? []).length - 1)}
+                               className={`p-1 rounded-md transition-all ${index === ((selectedCategory?.fields ?? []).length - 1) ? 'text-slate-900 cursor-not-allowed' : 'text-slate-600 hover:text-[#A3E635] hover:bg-white/5'}`}
                              >
                                <ArrowDown size={14} />
                              </button>
@@ -308,7 +308,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                    {canEdit && !isEditing && (
                       <div className="flex items-center gap-2 opacity-100 transition-opacity justify-end">
                         <button onClick={() => startEditField(field)} className="p-3 text-slate-500 hover:text-[#A3E635] bg-slate-800/50 rounded-xl border border-white/5 transition-all"><Edit3 size={18} /></button>
-                        <button onClick={() => confirm(t('delete_confirm')) && onUpdateCategories(categories.map(c => c.id === selectedCategoryId ? { ...c, fields: c.fields.filter(f => f.id !== field.id) } : c))} className="p-3 text-slate-500 hover:text-red-400 bg-slate-800/50 rounded-xl border border-white/5 transition-all"><Trash2 size={18} /></button>
+                        <button onClick={() => confirm(t('delete_confirm')) && onUpdateCategories(categories.map(c => c.id === selectedCategoryId ? { ...c, fields: (c.fields ?? []).filter(f => f.id !== field.id) } : c))} className="p-3 text-slate-500 hover:text-red-400 bg-slate-800/50 rounded-xl border border-white/5 transition-all"><Trash2 size={18} /></button>
                       </div>
                    )}
                  </div>
@@ -316,7 +316,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
              </div>
              
              {canEdit && (
-               <div className="p-10 lg:p-14 bg-slate-950/40 border-t border-white/5 space-y-10">
+               <div className="p-4 sm:p-6 lg:p-14 bg-slate-950/40 border-t border-white/5 space-y-6 sm:space-y-10">
                   <div className="flex items-center gap-3">
                     <Plus size={16} className="text-[#A3E635]" />
                     <h4 className="text-[10px] font-black text-white uppercase tracking-widest">{t('add_node')}</h4>

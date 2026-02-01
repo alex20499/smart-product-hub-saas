@@ -84,6 +84,23 @@
       aside, header, .no-print { display: none !important; }
       main { width: 100% !important; background: #fff !important; color: #000 !important; }
     }
+
+    /* 居中弹窗 - 紧凑尺寸 + 统一滚动条（内联确保生效） */
+    .center-modal-container {
+      max-width: 360px !important;
+      width: 100% !important;
+      height: fit-content !important;
+      max-height: min(80dvh, 80vh) !important;
+      scrollbar-width: thin !important;
+      scrollbar-color: rgba(255,255,255,0.25) rgba(255,255,255,0.05) !important;
+    }
+    .center-modal-container::-webkit-scrollbar { width: 4px !important; }
+    .center-modal-container::-webkit-scrollbar-track { background: rgba(255,255,255,0.05) !important; border-radius: 4px; }
+    .center-modal-container::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25) !important; border-radius: 4px; }
+    .center-modal-container::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.4) !important; }
+    .center-modal-overlay::-webkit-scrollbar { width: 4px !important; }
+    .center-modal-overlay::-webkit-scrollbar-track { background: transparent !important; }
+    .center-modal-overlay::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.25) !important; border-radius: 4px; }
   </style>
 <script type="importmap">
 {
@@ -98,7 +115,7 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
+<link rel="stylesheet" href="/styles/ui-layout.css?v=2">
 </head>
 <body class="h-screen overflow-hidden">
   <div id="root"></div>

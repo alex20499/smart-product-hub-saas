@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Plus, Trash2, X, Package, Edit2, 
   Image as ImageIcon, Check, LayoutGrid, ChevronDown, 
@@ -30,17 +30,17 @@ const MultiQuantityInput: React.FC<{ options: string[]; value: Record<string, nu
     onChange(newValue);
   };
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 bg-slate-950/50 rounded-2xl border border-white/5">
+    <div className="grid grid-cols-1 gap-2 sm:gap-3 p-4 bg-slate-950/50 rounded-2xl border border-white/5 min-w-0">
       {options.map(opt => {
         const isChecked = value[opt] !== undefined;
         return (
-          <div key={opt} className={`flex items-center justify-between p-3 rounded-xl border transition-all ${isChecked ? 'bg-slate-900 border-[#A3E635]/50 shadow-lg shadow-[#A3E635]/5' : 'bg-transparent border-white/5'}`}>
-            <div className="flex items-center gap-3 cursor-pointer flex-1" onClick={() => toggleOption(opt)}>
-              <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${isChecked ? 'bg-[#A3E635] border-[#A3E635] text-slate-950' : 'bg-slate-950 border-white/10'}`}>{isChecked && <Check size={12} />}</div>
-              <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">{opt}</span>
+          <div key={opt} className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all min-w-0 ${isChecked ? 'bg-slate-900 border-[#A3E635]/50 shadow-lg shadow-[#A3E635]/5' : 'bg-transparent border-white/5'}`}>
+            <div className="flex items-center gap-3 cursor-pointer flex-1 min-w-0" onClick={() => toggleOption(opt)}>
+              <div className={`w-5 h-5 shrink-0 rounded border flex items-center justify-center transition-all ${isChecked ? 'bg-[#A3E635] border-[#A3E635] text-slate-950' : 'bg-slate-950 border-white/10'}`}>{isChecked && <Check size={12} />}</div>
+              <span className="text-[11px] font-black uppercase text-slate-400 truncate" title={opt}>{opt}</span>
             </div>
             {isChecked && (
-              <div className="flex items-center gap-2 bg-slate-950 rounded-lg p-1 border border-white/5">
+              <div className="flex items-center shrink-0 bg-slate-950 rounded-lg p-1 border border-white/5">
                 <input 
                   type="number" 
                   min="0" 
@@ -92,7 +92,7 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
 export const ProductInventory: React.FC<ProductInventoryProps> = ({
   products, categories, onAdd, onUpdate, onDelete, currentUser, isAddModalOpen, setIsAddModalOpen, t
 }) => {
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // list = 列表/表格视图
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedChannel, setSelectedChannel] = useState('all');
@@ -148,16 +148,37 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   
   const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
   
+  const formScrollRef = useRef<HTMLFormElement>(null);
   // 重置分页当筛选条件改变
-  useMemo(() => {
+  useEffect(() => {
     setCurrentPage(1);
   }, [selectedCategory, selectedChannel, searchQuery, itemsPerPage]);
+  // 打开新增/编辑表单时滚动到顶部，确保看到核心信息（渠道、店铺名等）
+  useEffect(() => {
+    if (selectedCatForAdd || editingId) {
+      const t = setTimeout(() => formScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+      return () => clearTimeout(t);
+    }
+  }, [selectedCatForAdd, editingId]);
 
   const activeCategory = categories.find(c => c?.id === (editingId ? products.find(p => p?.id === editingId)?.categoryId : selectedCatForAdd));
   const detailedProduct = products.find(p => p?.id === viewDetailId);
 
   const handleCloseModal = () => {
     setIsAddModalOpen(false); setEditingId(null); setSelectedCatForAdd(null); setFormData({});
+    // 关闭时滚动回顶部
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+  
+  const handleAddClick = () => {
+    setIsAddModalOpen(true);
+    // 点击新增按钮后，等待抽屉打开然后滚动到底部
+    setTimeout(() => {
+      const drawerElement = document.querySelector('.drawer-container');
+      if (drawerElement) {
+        drawerElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }
+    }, 100);
   };
   
   // 侧边抽屉相关函数
@@ -216,11 +237,13 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
         return;
       }
       
-      // 按照 App.tsx 中 handleProductUpdate 期望的数据结构
+      // 按照 App.tsx 中 handleProductUpdate 期望的数据结构（必须含 categoryId）
       const updateData = {
+        categoryId: editFormData.categoryId || selectedProduct.categoryId,
         brand: editFormData.brand?.trim() || '',
         model: editFormData.model?.trim() || '',
         channel: editFormData.channel?.trim() || '',
+        shopName: editFormData.shopName?.trim() || '',
         price: Number(editFormData.price) || 0,
         rating: Number(editFormData.rating) || 0,
         monthlySales: Number(editFormData.monthlySales) || 0,
@@ -251,13 +274,16 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
     }
   };
   
-  // AI分析函数
+  // AI分析函数 - 使用 .env 中的 GEMINI_API_KEY
   const handleProductAIAnalysis = async (product: ProductData) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      setAiAnalysis('请在 .env 中配置 GEMINI_API_KEY 后重启开发服务器');
+      return;
+    }
     setIsAiAnalyzing(true);
     setAiAnalysis(null);
-    
-    const apiKey = "AIzaSyBDwfBJ3Go1xqFHE3SvviBn4Ut1dyeRJVA";
-    const modelName = "gemini-flash-latest";
+    const modelName = "gemini-1.5-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
     try {
@@ -295,11 +321,15 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
     }
   };
   
-  // AI竞品对策函数
+  // AI竞品对策函数 - 使用 .env 中的 GEMINI_API_KEY
   const handleCompetitorAnalysis = async (product: ProductData) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      setCompetitorAnalysis('请在 .env 中配置 GEMINI_API_KEY 后重启开发服务器');
+      return;
+    }
     setIsCompetitorAnalyzing(true);
     setCompetitorAnalysis(null);
-    const apiKey = "AIzaSyC0KhY_VWsw1RR0avGka_m5EJw7vCr8ROs";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     try {
       const competitorInfo = {
@@ -394,11 +424,11 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
         <div className="flex flex-wrap items-center gap-3">
            <div className="flex bg-slate-900 p-1 rounded-xl border border-white/5">
               <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white text-slate-950 shadow-lg' : 'text-slate-500 hover:text-white'}`}><LayoutGrid size={18} /></button>
-              <button onClick={() => setViewMode('table')} className={`p-2 rounded-lg transition-all ${viewMode === 'table' ? 'bg-white text-slate-950 shadow-lg' : 'text-slate-500 hover:text-white'}`}><List size={18} /></button>
+              <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white text-slate-950 shadow-lg' : 'text-slate-500 hover:text-white'}`}><List size={18} /></button>
            </div>
            <div className="h-8 w-px bg-white/5 mx-2"></div>
            {canEdit && (
-             <button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-3 bg-[#A3E635] text-slate-950 px-8 py-3.5 rounded-xl font-black text-[10px] uppercase shadow-[0_10px_30px_rgba(163,230,53,0.2)] hover:scale-105 active:scale-95 transition-all tracking-widest">
+             <button onClick={handleAddClick} className="flex items-center gap-3 bg-[#A3E635] text-slate-950 px-8 py-3.5 rounded-xl font-black text-[10px] uppercase shadow-[0_10px_30px_rgba(163,230,53,0.2)] hover:scale-105 active:scale-95 transition-all tracking-widest">
                <Plus size={16} /> {t('new_entry')}
              </button>
            )}
@@ -517,84 +547,89 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
         </div>
       )}
 
-      {/* 品类选择模态框 - 独立显示 */}
-      {isAddModalOpen && !selectedCatForAdd && (
-        <>
-           <div className="center-modal-overlay animate-in fade-in duration-300" onClick={handleCloseModal}></div>
-           <div className="center-modal-container p-8 lg:p-12 space-y-8 animate-in zoom-in-95 duration-200 max-w-2xl w-full mx-4">
-              <div className="flex items-center justify-between">
-                 <div>
-                    <h3 className="text-2xl font-black text-white uppercase tracking-tight">{t('new_entry')}</h3>
-                    <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mt-2">选择产品品类架构</p>
-                 </div>
-                 <button onClick={handleCloseModal} className="size-12 bg-slate-900 border border-white/5 rounded-xl flex items-center justify-center text-slate-500 hover:text-white transition-all"><X size={24} /></button>
-              </div>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                 {categories.map(cat => {
-                   if (!cat?.id || !cat?.name) return null;
-                   
-                   return (
-                     <button 
-                       key={cat.id} 
-                       onClick={() => setSelectedCatForAdd(cat.id)}
-                       className="w-full flex items-center justify-between p-6 bg-slate-900/50 border border-white/5 rounded-2xl hover:border-[#A3E635]/40 hover:bg-[#A3E635]/5 transition-all group"
-                     >
-                        <div className="flex items-center gap-4">
-                           <div className="size-12 bg-slate-950 rounded-xl flex items-center justify-center text-slate-700 group-hover:bg-[#A3E635] group-hover:text-slate-950 transition-all">
-                             <Package size={20} />
-                           </div>
-                           <div className="text-left">
-                             <span className="font-black text-[11px] uppercase tracking-widest text-white">{cat.name}</span>
-                             {cat?.description && (
-                               <p className="text-[8px] text-slate-500 mt-1">{cat.description}</p>
-                             )}
-                           </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                           {cat?.fields && cat.fields.length > 0 && (
-                             <span className="text-[8px] text-slate-600 bg-slate-800 px-2 py-1 rounded">
-                               {cat.fields.length} 字段
-                             </span>
-                           )}
-                           <ChevronRight className="text-slate-700" size={16} />
-                        </div>
-                     </button>
-                   );
-                 })}
-              </div>
-           </div>
-        </>
-      )}
-
-      {/* 产品表单抽屉 - 选择品类后显示 */}
-      {(selectedCatForAdd || editingId) && (
+      {/* Drawer for Add/Edit */}
+      {(isAddModalOpen || editingId) && (
         <>
            <div className="drawer-overlay animate-in fade-in duration-300" onClick={handleCloseModal}></div>
            <aside className="drawer-container open animate-in slide-in-from-right duration-500">
               <div className="drawer-header">
                  <div>
-                    <h3 className="text-2xl font-black text-white uppercase tracking-tight">{editingId ? t('edit') : t('new_entry')}</h3>
-                    <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-1">Data Architecture Node</p>
+                    <h3 className="text-lg sm:text-2xl font-black text-white uppercase tracking-tight">{editingId ? t('edit') : t('new_entry')}</h3>
+                    <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mt-1">Data Architecture Node</p>
                  </div>
-                 <button onClick={handleCloseModal} className="size-12 bg-slate-900 border border-white/5 rounded-xl flex items-center justify-center text-slate-500 hover:text-white transition-all"><X size={24} /></button>
               </div>
-              
-              <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-10 space-y-10 custom-scrollbar">
-                   {/* 核心字段区域 - 固定显示在顶部 */}
-                   <div className="space-y-8">
-                      <div className="flex items-center gap-4 pb-6 border-b border-white/5">
-                         <div className="size-10 bg-[#A3E635]/10 rounded-xl flex items-center justify-center">
-                            <Package size={20} className="text-[#A3E635]" />
+
+              {!selectedCatForAdd && !editingId ? (
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10 space-y-4 sm:space-y-6 custom-scrollbar">
+                   <div className="text-center mb-4 sm:mb-8">
+                      <div className="inline-flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-1.5 sm:py-2 bg-[#A3E635]/10 border border-[#A3E635]/30 rounded-full mb-3 sm:mb-4">
+                        <Package size={14} className="text-[#A3E635] sm:w-4 sm:h-4 shrink-0" />
+                        <span className="text-[10px] sm:text-[11px] font-black text-[#A3E635] uppercase tracking-widest">选择产品品类</span>
+                      </div>
+                      <p className="text-[9px] sm:text-[10px] text-slate-500 mb-4 sm:mb-6">请选择要添加的产品品类架构</p>
+                   </div>
+                   <div className="grid grid-cols-1 gap-3 sm:gap-4">
+                      {categories.map(cat => {
+                        // 防崩溃：确保 category 对象存在
+                        if (!cat?.id || !cat?.name) return null;
+                        
+                        return (
+                          <button 
+                            key={cat.id} 
+                            onClick={() => setSelectedCatForAdd(cat.id)}
+                            className="w-full flex items-center justify-between p-4 sm:p-6 bg-slate-900/50 border border-white/5 rounded-xl sm:rounded-2xl hover:border-[#A3E635]/40 hover:bg-[#A3E635]/5 transition-all group"
+                          >
+                             <div className="flex items-center gap-3 sm:gap-5 min-w-0">
+                                <div className="size-10 sm:size-12 bg-slate-950 rounded-lg sm:rounded-xl flex items-center justify-center text-slate-700 group-hover:bg-[#A3E635] group-hover:text-slate-950 transition-all shrink-0">
+                                  <Package size={18} className="sm:w-5 sm:h-5" />
+                                </div>
+                                <div className="text-left">
+                                  <span className="font-black text-[11px] uppercase tracking-widest text-white">{cat.name}</span>
+                                  {cat?.description && (
+                                    <p className="text-[8px] text-slate-500 mt-1">{cat.description}</p>
+                                  )}
+                                </div>
+                             </div>
+                             <div className="flex items-center gap-2">
+                                {cat?.fields && cat.fields.length > 0 && (
+                                  <span className="text-[8px] text-slate-600 bg-slate-800 px-2 py-1 rounded">
+                                    {cat.fields.length} 个字段
+                                  </span>
+                                )}
+                                <ChevronRight className="text-slate-700" size={16} />
+                             </div>
+                          </button>
+                        );
+                      })}
+                   </div>
+                   
+                   {/* 取消按钮 - 移到底部 */}
+                   <div className="pt-4 sm:pt-6 border-t border-white/5">
+                      <button 
+                        onClick={handleCloseModal}
+                        className="w-full py-3.5 sm:py-4 bg-slate-800 border border-white/10 text-slate-400 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-700 hover:text-white transition-all flex items-center justify-center gap-3"
+                      >
+                        <X size={14} className="sm:w-4 sm:h-4 shrink-0" />
+                        取消选择
+                      </button>
+                   </div>
+                </div>
+              ) : (
+                <form ref={formScrollRef} onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-10 space-y-6 sm:space-y-10 custom-scrollbar">
+                   {/* 核心字段区域 - 含渠道、店铺名等，置顶显示 */}
+                   <div className="space-y-5 sm:space-y-8">
+                      <div className="flex items-center gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-white/5">
+                         <div className="size-8 sm:size-10 bg-[#A3E635]/10 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0">
+                            <Package size={18} className="text-[#A3E635] sm:w-5 sm:h-5" />
                          </div>
                          <div>
                             <h4 className="text-sm font-black text-white uppercase tracking-widest">核心信息</h4>
-                            <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">所有品类共有字段</p>
+                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">品牌、型号、渠道、店铺名、价格等</p>
                          </div>
                       </div>
                       
                       {/* 核心字段固定渲染 */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                          <div className="space-y-3">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
                                品牌 <span className="text-red-400">*</span>
@@ -625,12 +660,33 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
                                渠道 <span className="text-red-400">*</span>
                             </label>
+                            <div className="relative group">
+                               <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-[#A3E635] transition-colors" />
+                               <select 
+                                 value={formData.channel || ''}
+                                 onChange={e => setFormData({...formData, channel: e.target.value})}
+                                 className="w-full bg-slate-900 border border-white/5 rounded-xl pl-12 pr-10 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner appearance-none cursor-pointer"
+                                 required
+                               >
+                                  <option value="">选择渠道</option>
+                                  <option value="Amazon">Amazon</option>
+                                  <option value="Rakuten">Rakuten</option>
+                                  <option value="Yahoo Shopping">Yahoo Shopping</option>
+                               </select>
+                               <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" size={16} />
+                            </div>
+                         </div>
+                         
+                         <div className="space-y-3">
+                            <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
+                               店铺名
+                            </label>
                             <input 
                               type="text" 
                               className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
-                              placeholder="如：淘宝、京东、拼多多" 
-                              value={formData.channel || ''}
-                              onChange={e => setFormData({...formData, channel: e.target.value})}
+                              placeholder="输入店铺名称" 
+                              value={formData.shopName || ''}
+                              onChange={e => setFormData({...formData, shopName: e.target.value})}
                             />
                          </div>
                          
@@ -638,56 +694,68 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
                                价格 (¥)
                             </label>
-                            <input 
-                              type="number" 
-                              step="0.01"
-                              className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
-                              placeholder="0.00" 
-                              value={formData.price || ''}
-                              onChange={e => setFormData({...formData, price: e.target.value === '' ? '' : parseFloat(e.target.value)})}
-                            />
+                            <div className="relative">
+                               <input 
+                                 type="number" 
+                                 step="0.01"
+                                 className="w-full bg-slate-900 border border-white/5 rounded-xl pl-4 pr-16 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
+                                 placeholder="0.00" 
+                                 value={formData.price || ''}
+                                 onChange={e => setFormData({...formData, price: e.target.value === '' ? '' : parseFloat(e.target.value)})}
+                               />
+                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-black">¥</span>
+                            </div>
                          </div>
                          
                          <div className="space-y-3">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
                                月销量
                             </label>
-                            <input 
-                              type="number" 
-                              className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
-                              placeholder="0" 
-                              value={formData.monthlySales || ''}
-                              onChange={e => setFormData({...formData, monthlySales: e.target.value === '' ? '' : parseInt(e.target.value)})}
-                            />
+                            <div className="relative">
+                               <input 
+                                 type="number" 
+                                 className="w-full bg-slate-900 border border-white/5 rounded-xl pl-4 pr-16 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
+                                 placeholder="0" 
+                                 value={formData.monthlySales || ''}
+                                 onChange={e => setFormData({...formData, monthlySales: e.target.value === '' ? '' : parseInt(e.target.value)})}
+                               />
+                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-black">件/月</span>
+                            </div>
                          </div>
                          
                          <div className="space-y-3">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
                                评分 (0-5)
                             </label>
-                            <input 
-                              type="number" 
-                              min="0" 
-                              max="5" 
-                              step="0.1"
-                              className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
-                              placeholder="0.0" 
-                              value={formData.rating || ''}
-                              onChange={e => setFormData({...formData, rating: e.target.value === '' ? '' : parseFloat(e.target.value)})}
-                            />
+                            <div className="relative">
+                               <input 
+                                 type="number" 
+                                 min="0" 
+                                 max="5" 
+                                 step="0.1"
+                                 className="w-full bg-slate-900 border border-white/5 rounded-xl pl-4 pr-16 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
+                                 placeholder="0.0" 
+                                 value={formData.rating || ''}
+                                 onChange={e => setFormData({...formData, rating: e.target.value === '' ? '' : parseFloat(e.target.value)})}
+                               />
+                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-black">★</span>
+                            </div>
                          </div>
                          
                          <div className="space-y-3 md:col-span-2">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
                                产品链接
                             </label>
-                            <input 
-                              type="url" 
-                              className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
-                              placeholder="https://..." 
-                              value={formData.linkUrl || ''}
-                              onChange={e => setFormData({...formData, linkUrl: e.target.value})}
-                            />
+                            <div className="relative group">
+                               <ExternalLink className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-[#A3E635] transition-colors" />
+                               <input 
+                                 type="url" 
+                                 className="w-full bg-slate-900 border border-white/5 rounded-xl pl-12 pr-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
+                                 placeholder="https://amazon.com/dp/..." 
+                                 value={formData.linkUrl || ''}
+                                 onChange={e => setFormData({...formData, linkUrl: e.target.value})}
+                               />
+                            </div>
                          </div>
                          
                          <div className="space-y-3 md:col-span-2">
@@ -712,7 +780,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                             </div>
                             <div>
                                <h4 className="text-sm font-black text-white uppercase tracking-widest">品类参数</h4>
-                               <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">{activeCategory.name} 特有属性</p>
+                               <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">{activeCategory.name} 特有属性 · 渠道/店铺名见上方核心信息</p>
                             </div>
                          </div>
                          
@@ -720,9 +788,10 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                             {activeCategory.fields.map((field) => {
                               // 防崩溃：确保 field 对象存在且有必要属性
                               if (!field?.id || !field?.name || !field?.type) return null;
-                              
+                              // 多选数量类字段占满宽，避免选项挤在一起
+                              const isWide = field.type === FieldType.MULTI_SELECT_QUANTITY || field.type === FieldType.TEXTAREA;
                               return (
-                                <div key={field.id} className="space-y-3">
+                                <div key={field.id} className={`space-y-3 ${isWide ? 'md:col-span-2' : ''}`}>
                                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
                                       {field.name}
                                       {field?.required && <span className="text-red-400">*</span>}
@@ -736,8 +805,21 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                    )}
                    
                    <div className="pt-10 border-t border-white/5 flex flex-col gap-4 pb-10">
-                      <button type="submit" className="w-full py-5 bg-white text-slate-950 rounded-2xl font-black text-[11px] uppercase tracking-[0.4em] shadow-xl hover:bg-[#A3E635] transition-all active:scale-95">{t('add_info')}</button>
-                      <button type="button" onClick={handleCloseModal} className="w-full py-4 text-[9px] font-black text-slate-600 uppercase tracking-widest hover:text-white transition-colors">{t('cancel')}</button>
+                      <button 
+                        type="submit" 
+                        className="w-full py-5 bg-white text-slate-950 rounded-2xl font-black text-[11px] uppercase tracking-[0.4em] shadow-xl hover:bg-[#A3E635] transition-all active:scale-95 flex items-center justify-center gap-3"
+                      >
+                        <Check size={18} />
+                        {t('add_info')}
+                      </button>
+                      <button 
+                        type="button" 
+                        onClick={handleCloseModal} 
+                        className="w-full py-4 bg-slate-800 border border-white/10 text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-700 hover:text-white transition-all flex items-center justify-center gap-3"
+                      >
+                        <X size={16} />
+                        {t('cancel')}
+                      </button>
                    </div>
                 </form>
               )}
@@ -748,44 +830,44 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       {/* Detail Overlay - reuse existing logic or simplify if needed */}
       {viewDetailId && detailedProduct && (
         <div className="center-modal-overlay animate-in fade-in duration-300" onClick={() => setViewDetailId(null)}>
-           <div className="center-modal-container animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
-              <div className="px-10 py-8 border-b border-white/5 flex items-center justify-between bg-slate-900/40">
-                 <div className="flex items-center gap-4">
-                    <div className="px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[9px] font-black uppercase tracking-widest rounded-lg">{detailedProduct?.brand || '未知品牌'}</div>
-                    <div className="h-4 w-px bg-white/10"></div>
-                    <span className="text-[10px] font-black text-white uppercase tracking-tight truncate max-w-xs">{detailedProduct?.model || '未命名产品'}</span>
+           <div className="center-modal-container flex flex-col max-w-2xl sm:max-w-4xl animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
+              <div className="px-4 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8 border-b border-white/5 flex items-center justify-between gap-3 bg-slate-900/40 shrink-0">
+                 <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                    <div className="px-2 sm:px-3 py-0.5 sm:py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[8px] sm:text-[9px] font-black uppercase tracking-widest rounded-lg shrink-0">{detailedProduct?.brand || '未知品牌'}</div>
+                    <div className="h-3 sm:h-4 w-px bg-white/10 shrink-0"></div>
+                    <span className="text-[9px] sm:text-[10px] font-black text-white uppercase tracking-tight truncate">{detailedProduct?.model || '未命名产品'}</span>
                  </div>
-                 <div className="flex items-center gap-3">
+                 <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                     {canEdit && (
-                      <button onClick={() => { setEditingId(detailedProduct?.id); setFormData({...detailedProduct}); setViewDetailId(null); }} className="p-3 bg-white/5 text-slate-400 hover:text-[#A3E635] rounded-xl transition-all border border-white/5"><Edit2 size={18} /></button>
+                      <button onClick={() => { setEditingId(detailedProduct?.id); setFormData({...detailedProduct}); setViewDetailId(null); }} className="p-2 sm:p-3 bg-white/5 text-slate-400 hover:text-[#A3E635] rounded-lg sm:rounded-xl transition-all border border-white/5"><Edit2 size={16} className="sm:w-[18px] sm:h-[18px]" /></button>
                     )}
-                    <button onClick={() => setViewDetailId(null)} className="p-3 bg-white/5 text-slate-400 hover:text-white rounded-xl transition-all border border-white/5"><X size={18} /></button>
+                    <button onClick={() => setViewDetailId(null)} className="p-2 sm:p-3 bg-white/5 text-slate-400 hover:text-white rounded-lg sm:rounded-xl transition-all border border-white/5"><X size={16} className="sm:w-[18px] sm:h-[18px]" /></button>
                  </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
-                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-                    <div className="lg:col-span-5 aspect-square bg-slate-950 rounded-[2.5rem] p-8 border border-white/5 shadow-inner flex items-center justify-center">
-                       {detailedProduct?.mainImage ? <img src={detailedProduct.mainImage} className="max-w-full max-h-full object-contain" /> : <Package size={64} className="text-slate-800" />}
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-12 custom-scrollbar min-h-0">
+                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-12">
+                    <div className="lg:col-span-5 aspect-square max-h-[280px] sm:max-h-none bg-slate-950 rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-6 lg:p-8 border border-white/5 shadow-inner flex items-center justify-center shrink-0">
+                       {detailedProduct?.mainImage ? <img src={detailedProduct.mainImage} className="max-w-full max-h-full object-contain" alt="" /> : <Package size={48} className="text-slate-800 sm:w-16 sm:h-16" />}
                     </div>
-                    <div className="lg:col-span-7 space-y-10">
-                       <div className="grid grid-cols-2 gap-8 border-b border-white/5 pb-10">
+                    <div className="lg:col-span-7 space-y-6 sm:space-y-10 min-w-0">
+                       <div className="grid grid-cols-2 gap-4 sm:gap-8 border-b border-white/5 pb-6 sm:pb-10">
                           <div>
-                             <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2">{t('price')}</p>
-                             <p className="text-4xl font-black text-white italic font-num">¥{(Number(detailedProduct?.price) || 0).toLocaleString()}</p>
+                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('price')}</p>
+                             <p className="text-2xl sm:text-4xl font-black text-white italic font-num">¥{(Number(detailedProduct?.price) || 0).toLocaleString()}</p>
                           </div>
                           <div>
-                             <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2">{t('volume')}</p>
-                             <p className="text-4xl font-black text-[#A3E635] font-num">{(Number(detailedProduct?.monthlySales) || 0).toLocaleString()}</p>
+                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('volume')}</p>
+                             <p className="text-2xl sm:text-4xl font-black text-[#A3E635] font-num">{(Number(detailedProduct?.monthlySales) || 0).toLocaleString()}</p>
                           </div>
                        </div>
-                       <div className="space-y-6">
+                       <div className="space-y-4 sm:space-y-6">
                           {Object.entries(detailedProduct || {}).map(([key, val]) => {
                              if (['id', 'categoryId', 'createdAt', 'updatedAt', 'updatedBy', 'mainImage', 'price', 'monthlySales', 'model', 'brand', 'channel'].includes(key)) return null;
                              if (!val) return null;
                              return (
-                               <div key={key} className="space-y-1.5 text-left">
-                                  <p className="text-[8px] font-black text-slate-700 uppercase tracking-widest">{key}</p>
-                                  <div className="text-[11px] font-medium text-slate-300 leading-relaxed normal-case bg-white/5 p-4 rounded-2xl border border-white/5">
+                               <div key={key} className="space-y-1 sm:space-y-1.5 text-left">
+                                  <p className="text-[7px] sm:text-[8px] font-black text-slate-700 uppercase tracking-widest">{key}</p>
+                                  <div className="text-[10px] sm:text-[11px] font-medium text-slate-300 leading-relaxed normal-case bg-white/5 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-white/5">
                                      {typeof val === 'object' ? JSON.stringify(val) : String(val)}
                                   </div>
                                </div>
@@ -1324,11 +1406,25 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       
                       <div className="space-y-3">
                         <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">渠道</label>
+                        <select 
+                          value={editFormData.channel || ''}
+                          onChange={e => setEditFormData({...editFormData, channel: e.target.value})}
+                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner appearance-none cursor-pointer"
+                        >
+                          <option value="">选择渠道</option>
+                          <option value="Amazon">Amazon</option>
+                          <option value="Rakuten">Rakuten</option>
+                          <option value="Yahoo Shopping">Yahoo Shopping</option>
+                        </select>
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">店铺名</label>
                         <input 
                           type="text" 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.channel || ''}
-                          onChange={e => setEditFormData({...editFormData, channel: e.target.value})}
+                          value={editFormData.shopName || ''}
+                          onChange={e => setEditFormData({...editFormData, shopName: e.target.value})}
                         />
                       </div>
                       

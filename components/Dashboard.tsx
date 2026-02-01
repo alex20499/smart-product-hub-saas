@@ -133,9 +133,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
 
   const handleMarketAIAnalysis = async () => {
     if (!isAiReady) return;
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      setGlobalAiAnalysis('请在 .env 中配置 GEMINI_API_KEY 后重启开发服务器');
+      return;
+    }
     setIsGlobalAnalyzing(true);
     setGlobalAiAnalysis(null);
-    const apiKey = "AIzaSyC0KhY_VWsw1RR0avGka_m5EJw7vCr8ROs";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     try {
       const marketContext = {
@@ -163,11 +167,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
   };
 
   const handleProductAIAnalysis = async (product: ProductData) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      setAiAnalysis('请在 .env 中配置 GEMINI_API_KEY 后重启开发服务器');
+      return;
+    }
     setIsAiAnalyzing(true);
     setAiAnalysis(null);
-    
-    const apiKey = "AIzaSyBDwfBJ3Go1xqFHE3SvviBn4Ut1dyeRJVA";
-    const modelName = "gemini-flash-latest";
+    const modelName = "gemini-1.5-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
     try {
@@ -494,49 +501,84 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
           )}
       </div>
 
-      {/* 详情页弹窗 */}
+      {/* 详情页弹窗 - 与产品管理页详情信息量一致 */}
       {activeDetailId && detailedProduct && (
         <div className="detail-modal-overlay animate-in fade-in duration-500" onClick={() => setActiveDetailId(null)}>
-           <div className="detail-modal-container open animate-in slide-in-from-right duration-500" onClick={(e) => e.stopPropagation()}>
-              <div className="detail-modal-header">
+           <div className="detail-modal-container open animate-in slide-in-from-right duration-500 flex flex-col max-w-2xl sm:max-w-4xl" onClick={(e) => e.stopPropagation()}>
+              <div className="detail-modal-header shrink-0">
                 <button onClick={() => setActiveDetailId(null)} className="flex items-center gap-4 text-slate-500 hover:text-white transition-all group">
                    <ArrowLeft size={24} className="text-[#A3E635]" />
                    <span className="text-[10px] font-black uppercase tracking-[0.3em]">{t('close')}</span>
                 </button>
               </div>
 
-              <div className="detail-modal-content space-y-16 text-left pb-32">
-                 <div className="flex flex-col md:flex-row gap-12 items-start">
-                    <div className="w-full md:w-80 aspect-square bg-slate-950 rounded-[3rem] p-8 border border-white/5 shadow-2xl flex items-center justify-center shrink-0">
-                       {detailedProduct?.attributes?.mainImage ? (
-                         <img src={detailedProduct.attributes.mainImage} className="w-full h-full object-contain" alt="" />
+              <div className="detail-modal-content flex-1 overflow-y-auto space-y-12 text-left pb-32 custom-scrollbar min-h-0">
+                 {/* 顶部：图片 + 核心信息（与 ProductInventory 一致） */}
+                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-12">
+                    <div className="lg:col-span-5 aspect-square max-h-[280px] sm:max-h-none bg-slate-950 rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-6 lg:p-8 border border-white/5 shadow-inner flex items-center justify-center shrink-0">
+                       {(detailedProduct?.mainImage || detailedProduct?.attributes?.mainImage) ? (
+                         <img src={detailedProduct.mainImage || detailedProduct.attributes?.mainImage} className="max-w-full max-h-full object-contain" alt="" />
                        ) : (
-                         <Package size={60} className="text-slate-800" />
+                         <Package size={48} className="text-slate-800 sm:w-16 sm:h-16" />
                        )}
                     </div>
-                    <div className="flex-1 space-y-6">
-                       <div className="flex items-center gap-3">
-                          <div className="px-4 py-1.5 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[9px] font-black uppercase tracking-widest rounded-lg flex items-center gap-2">
-                             <Globe size={10} /> {detailedProduct?.channel || '未知渠道'}
-                          </div>
-                          <div className="px-4 py-1.5 bg-slate-800 border border-white/5 text-slate-400 text-[9px] font-black uppercase tracking-widest rounded-lg flex items-center gap-2">
-                             <Tag size={10} /> {detailedProduct?.brand || '未知品牌'}
-                          </div>
-                          <div className="px-4 py-1.5 bg-[#A3E635]/10 border border-[#A3E635]/20 text-[#A3E635] text-[9px] font-black uppercase tracking-widest rounded-lg flex items-center gap-2">
-                             <Package size={10} /> {detailedCategory?.name || 'GENERIC'}
-                          </div>
+                    <div className="lg:col-span-7 space-y-6 min-w-0">
+                       <div className="flex items-center gap-2 flex-wrap">
+                          <div className="px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[9px] font-black uppercase tracking-widest rounded-lg">{detailedProduct?.channel || '未知渠道'}</div>
+                          <div className="px-3 py-1 bg-slate-800 border border-white/5 text-slate-400 text-[9px] font-black uppercase tracking-widest rounded-lg">{detailedProduct?.brand || '未知品牌'}</div>
+                          <div className="px-3 py-1 bg-[#A3E635]/10 border border-[#A3E635]/20 text-[#A3E635] text-[9px] font-black uppercase tracking-widest rounded-lg">{detailedCategory?.name || '—'}</div>
                        </div>
-                       <h1 className="text-4xl lg:text-5xl font-black text-white uppercase tracking-tighter leading-tight">{detailedProduct?.model || '未命名产品'}</h1>
-                       
-                       <div className="pt-8 border-t border-white/5 grid grid-cols-2 gap-8">
-                          <div className="space-y-2">
-                             <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{t('price')}</p>
-                             <p className="text-3xl font-black text-white italic font-num">¥{(Number(detailedProduct?.price) || 0).toLocaleString()}</p>
+                       <h1 className="text-2xl sm:text-4xl font-black text-white uppercase tracking-tighter leading-tight">{detailedProduct?.model || '未命名产品'}</h1>
+                       <div className="grid grid-cols-2 gap-4 sm:gap-8 border-b border-white/5 pb-6 sm:pb-10">
+                          <div>
+                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('price')}</p>
+                             <p className="text-2xl sm:text-4xl font-black text-white italic font-num">¥{(Number(detailedProduct?.price) || 0).toLocaleString()}</p>
                           </div>
-                          <div className="space-y-2">
-                             <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{t('volume')}</p>
-                             <p className="text-3xl font-black text-[#A3E635] font-num">{(Number(detailedProduct?.monthlySales) || 0).toLocaleString()} <span className="text-xs uppercase ml-1">{t('units')}</span></p>
+                          <div>
+                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('volume')}</p>
+                             <p className="text-2xl sm:text-4xl font-black text-[#A3E635] font-num">{(Number(detailedProduct?.monthlySales) || 0).toLocaleString()} <span className="text-xs uppercase ml-1">{t('units')}</span></p>
                           </div>
+                          {(detailedProduct?.rating != null && detailedProduct?.rating !== '') && (
+                          <div className="col-span-2">
+                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('rating') || '评分'}</p>
+                             <div className="flex items-center gap-2">
+                                {Array.from({length: 5}).map((_, i) => (
+                                  <Star key={i} size={16} fill={i < Number(detailedProduct?.rating) ? "#A3E635" : "transparent"} className={i < Number(detailedProduct?.rating) ? "text-[#A3E635]" : "text-slate-800"} />
+                                ))}
+                                <span className="ml-2 text-xl font-black text-white font-num">{detailedProduct?.rating}</span>
+                             </div>
+                          </div>
+                          )}
+                          {((detailedProduct?.linkUrl || detailedProduct?.attributes?.link_url) && (
+                          <div className="col-span-2">
+                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('visit_link') || '产品链接'}</p>
+                             <a href={String(detailedProduct?.linkUrl || detailedProduct?.attributes?.link_url)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between gap-4 px-4 py-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl hover:bg-indigo-500 hover:text-white transition-all text-[10px] font-black uppercase tracking-widest truncate">
+                                <span className="truncate flex-1">{(detailedProduct?.linkUrl || detailedProduct?.attributes?.link_url) as string}</span>
+                                <ExternalLink size={14} className="shrink-0" />
+                             </a>
+                          </div>
+                          ))}
+                       </div>
+                       {/* 全部字段展示（与 ProductInventory 一致） */}
+                       <div className="space-y-4 sm:space-y-6">
+                          <div className="flex items-center gap-2 border-b border-white/5 pb-3">
+                             <Database size={16} className="text-slate-500" />
+                             <p className="text-[10px] font-black text-white uppercase tracking-widest">{t('full_node_data')}</p>
+                          </div>
+                          {Object.entries(detailedProduct || {}).map(([key, val]) => {
+                             if (['id', 'categoryId', 'createdAt', 'updatedAt', 'updatedBy', 'mainImage', 'price', 'monthlySales', 'model', 'brand', 'channel', 'linkUrl', 'rating'].includes(key)) return null;
+                             if (val === undefined || val === null || val === '') return null;
+                             if (key === 'attributes' && typeof val === 'object') return null; // 已展开，不重复显示
+                             const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).replace(/_/g, ' ');
+                             return (
+                               <div key={key} className="space-y-1 sm:space-y-1.5 text-left">
+                                  <p className="text-[7px] sm:text-[8px] font-black text-slate-600 uppercase tracking-widest">{label}</p>
+                                  <div className="text-[10px] sm:text-[11px] font-medium text-slate-300 leading-relaxed normal-case bg-white/5 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-white/5">
+                                     {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                                  </div>
+                               </div>
+                             );
+                          })}
                        </div>
                     </div>
                  </div>
@@ -570,8 +612,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                    </div>
                  )}
 
-                 {/* 卖点区 - 蓝色药丸标签 */}
-                 {detailedProduct?.attributes?.selling_points && Array.isArray(detailedProduct.attributes.selling_points) && detailedProduct.attributes.selling_points.length > 0 && (
+                 {/* 卖点区 - 蓝色药丸标签（兼容 sellingPoints 字符串或 attributes.selling_points 数组） */}
+                 {(() => {
+                   const sp = detailedProduct?.sellingPoints ?? detailedProduct?.attributes?.selling_points;
+                   const points = Array.isArray(sp) ? sp : (typeof sp === 'string' && sp ? [sp] : []);
+                   return points.length > 0 ? (
                     <div className="premium-card p-8 border-blue-500/30 bg-blue-950/20">
                        <div className="flex items-center gap-4 mb-6">
                           <div className="size-10 bg-blue-600 rounded-xl flex items-center justify-center text-white"><Star size={20} /></div>
@@ -581,7 +626,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                           </div>
                        </div>
                        <div className="flex flex-wrap gap-3">
-                          {detailedProduct.attributes.selling_points.map((point: string, index: number) => (
+                          {points.map((point: string, index: number) => (
                              <div key={index} className="px-4 py-2 bg-blue-500/20 border border-blue-500/30 text-blue-300 text-[10px] font-black uppercase tracking-widest rounded-full flex items-center gap-2">
                                 <Zap size={12} className="text-blue-400" />
                                 {point}
@@ -589,10 +634,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                           ))}
                        </div>
                     </div>
-                 )}
+                 ) : null;
+                 })()}
 
-                 {/* 口碑对比卡片 */}
-                 {(detailedProduct?.attributes?.pros || detailedProduct?.attributes?.cons) && (
+                 {/* 口碑对比卡片（兼容 top-level 或 attributes） */}
+                 {((detailedProduct?.pros ?? detailedProduct?.attributes?.pros) || (detailedProduct?.cons ?? detailedProduct?.attributes?.cons)) && (
                     <div className="premium-card p-8 border-white/10">
                        <div className="flex items-center gap-4 mb-6">
                           <div className="size-10 bg-gradient-to-r from-green-500 to-red-500 rounded-xl flex items-center justify-center text-white"><MessageSquare size={20} /></div>
@@ -603,7 +649,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                        </div>
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           {/* 好评 - 绿色 */}
-                          {detailedProduct?.attributes?.pros && (
+                          {(detailedProduct?.pros ?? detailedProduct?.attributes?.pros) && (
                              <div className="space-y-4">
                                 <div className="flex items-center gap-3">
                                    <div className="size-8 bg-green-500/20 rounded-lg flex items-center justify-center">
@@ -612,12 +658,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                                    <h5 className="text-[10px] font-black text-green-400 uppercase tracking-widest">好评词云</h5>
                                 </div>
                                 <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-2xl">
-                                   <p className="text-[11px] text-green-300 leading-relaxed">{detailedProduct.attributes.pros}</p>
+                                   <p className="text-[11px] text-green-300 leading-relaxed">{detailedProduct?.pros ?? detailedProduct?.attributes?.pros}</p>
                                 </div>
                              </div>
                           )}
                           {/* 差评 - 红色 */}
-                          {detailedProduct?.attributes?.cons && (
+                          {(detailedProduct?.cons ?? detailedProduct?.attributes?.cons) && (
                              <div className="space-y-4">
                                 <div className="flex items-center gap-3">
                                    <div className="size-8 bg-red-500/20 rounded-lg flex items-center justify-center">
@@ -626,7 +672,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                                    <h5 className="text-[10px] font-black text-red-400 uppercase tracking-widest">差评词云</h5>
                                 </div>
                                 <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl">
-                                   <p className="text-[11px] text-red-300 leading-relaxed">{detailedProduct.attributes.cons}</p>
+                                   <p className="text-[11px] text-red-300 leading-relaxed">{detailedProduct?.cons ?? detailedProduct?.attributes?.cons}</p>
                                 </div>
                              </div>
                           )}
@@ -634,8 +680,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                     </div>
                  )}
 
-                 {/* 痛点高亮 - 警告框 */}
-                 {detailedProduct?.attributes?.raw_review && (
+                 {/* 痛点高亮 - 警告框（兼容 top-level 或 attributes） */}
+                 {(detailedProduct?.raw_review ?? detailedProduct?.attributes?.raw_review) && (
                     <div className="premium-card p-8 border-red-500/50 bg-red-950/30 relative overflow-hidden">
                        <div className="absolute top-0 right-0 p-4 opacity-20"><AlertTriangle size={80} className="text-red-400" /></div>
                        <div className="flex items-start gap-4 mb-6">
@@ -648,13 +694,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                           </div>
                        </div>
                        <div className="p-6 bg-red-500/10 border-2 border-red-500/30 rounded-2xl">
-                          <p className="text-[13px] font-bold text-red-300 leading-relaxed">"{detailedProduct.attributes.raw_review}"</p>
+                          <p className="text-[13px] font-bold text-red-300 leading-relaxed">"{detailedProduct?.raw_review ?? detailedProduct?.attributes?.raw_review}"</p>
                        </div>
                     </div>
                  )}
 
-                 {/* 贾维斯洞察 - 市场洞察 */}
-                 {detailedProduct?.attributes?.insight_summary && (
+                 {/* 贾维斯洞察 - 市场洞察（兼容 top-level 或 attributes） */}
+                 {(detailedProduct?.insight_summary ?? detailedProduct?.attributes?.insight_summary) && (
                     <div className="premium-card p-10 border-purple-500/30 bg-purple-950/20 relative overflow-hidden group">
                        <div className="absolute top-0 right-0 p-4 opacity-10"><Brain size={100} className="text-purple-400" /></div>
                        <div className="flex items-center gap-4 mb-8">
@@ -665,74 +711,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                           </div>
                        </div>
                        <div className="prose prose-invert max-w-none">
-                          <div className="text-purple-300 text-sm leading-relaxed whitespace-pre-wrap italic font-medium">{detailedProduct.attributes.insight_summary}</div>
+                          <div className="text-purple-300 text-sm leading-relaxed whitespace-pre-wrap italic font-medium">{detailedProduct?.insight_summary ?? detailedProduct?.attributes?.insight_summary}</div>
                        </div>
                     </div>
                  )}
-                 <div className="space-y-12">
-                    <div className="flex items-center gap-4 border-b border-white/5 pb-4">
-                       <Database size={18} className="text-slate-500" />
-                       <p className="text-[11px] font-black text-white uppercase tracking-[0.3em]">{t('full_node_data')}</p>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                       {detailedCategory?.fields?.map(field => {
-                         // 防崩溃：确保 field 和 detailedProduct 存在
-                         if (!field?.id || !detailedProduct) return null;
-                         const value = detailedProduct[field.id];
-                         if (value === undefined || value === null || value === '') return null;
-                         const isLongText = field.type === FieldType.TEXTAREA || field.type === FieldType.MULTI_SELECT_QUANTITY;
-                         const isImage = field.type === FieldType.IMAGE;
-                         
-                         const isRanking = field.type === FieldType.NUMBER && (field.name.includes('排名') || field.name.toLowerCase().includes('rank'));
-                         
-                         return (
-                           <div key={field.id} className={`p-8 bg-slate-900/40 rounded-[2.5rem] border border-white/5 space-y-4 hover:border-white/10 transition-colors ${isLongText || isImage ? 'md:col-span-2 lg:col-span-3' : ''}`}>
-                              <div className="flex items-center gap-3 opacity-40">
-                                 <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{field.name}</p>
-                              </div>
-                              {isImage ? (
-                                <div className="w-full aspect-video bg-slate-950 rounded-[2rem] overflow-hidden border border-white/5 p-4 flex items-center justify-center relative">
-                                   <img src={value} className="w-full h-full object-contain" alt="" />
-                                </div>
-                              ) : isRanking ? (
-                                <div className="flex items-center gap-4">
-                                   <div className="size-14 bg-[#A3E635] rounded-2xl flex items-center justify-center text-slate-950 shadow-[0_0_30px_rgba(163,230,53,0.4)]">
-                                      <Trophy size={28} />
-                                   </div>
-                                   <p className="text-4xl font-black text-white italic font-num">#{value}</p>
-                                </div>
-                              ) : field.type === FieldType.URL ? (
-                                <a href={String(value)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between gap-4 px-6 py-4 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-2xl hover:bg-indigo-500 hover:text-white transition-all group/link mt-2">
-                                   <span className="text-[10px] font-black uppercase tracking-widest truncate flex-1">{String(value)}</span>
-                                   <ExternalLink size={14} className="shrink-0" />
-                                </a>
-                              ) : field.type === FieldType.RATING ? (
-                                <div className="flex items-center gap-2">
-                                   {Array.from({length: 5}).map((_, i) => i !== null ? (
-                                      <Star key={i} size={16} fill={i < Number(value) ? "#A3E635" : "transparent"} className={i < Number(value) ? "text-[#A3E635]" : "text-slate-800"} />
-                                   ) : null)}
-                                   <span className="ml-2 text-xl font-black text-white font-num">{value}</span>
-                                </div>
-                              ) : field.type === FieldType.MULTI_SELECT_QUANTITY ? (
-                                <div className="flex flex-wrap gap-3">
-                                   {Object.entries(value as Record<string, number>).map(([opt, qty]) => opt && qty !== null ? (
-                                      <div key={opt} className="px-4 py-2 bg-slate-950 border border-white/5 rounded-xl flex items-center gap-3">
-                                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{opt}</span>
-                                         <span className="text-xs font-black text-[#A3E635] font-num italic">x {qty}</span>
-                                      </div>
-                                   ) : null)}
-                                </div>
-                              ) : (
-                                <p className={`text-white uppercase leading-relaxed font-black tracking-tight ${isLongText ? 'text-sm font-medium normal-case text-slate-300' : 'text-lg italic font-num'}`}>
-                                   {String(value)}
-                                </p>
-                              )}
-                           </div>
-                         );
-                       })}
-                    </div>
-                 </div>
               </div>
            </div>
         </div>

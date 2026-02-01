@@ -142,7 +142,7 @@ export const Layout: React.FC<LayoutProps> = ({
         <div className="flex-1 overflow-y-auto p-8 lg:p-10 space-y-10 text-left">
            <div className="flex flex-col items-center text-center space-y-6">
               <div className="relative group">
-                <img src={currentUser.avatar} className="w-20 h-20 lg:w-24 lg:h-24 rounded-[2rem] lg:rounded-[2.5rem] border-2 border-[#A3E635]/30 p-1 shadow-2xl transition-transform group-hover:scale-105 duration-500" />
+                <img src={currentUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.username || 'U')}&background=A3E635&color=0F172A`} className="w-20 h-20 lg:w-24 lg:h-24 rounded-[2rem] lg:rounded-[2.5rem] border-2 border-[#A3E635]/30 p-1 shadow-2xl transition-transform group-hover:scale-105 duration-500" alt={currentUser.username} />
                 <div className="absolute -bottom-1 -right-1 bg-[#A3E635] size-7 lg:size-8 rounded-full border-4 border-[#0F172A] flex items-center justify-center shadow-lg"><ShieldCheck size={12} className="text-slate-950" /></div>
               </div>
               <div>
@@ -250,7 +250,7 @@ export const Layout: React.FC<LayoutProps> = ({
                className="flex items-center gap-3 group pl-2 lg:pl-6 border-l border-white/5 active:scale-95 transition-transform"
              >
                 <div className="relative shrink-0">
-                   <img src={currentUser.avatar} className="w-10 h-10 lg:w-11 lg:h-11 rounded-xl lg:rounded-2xl border border-white/10 group-hover:border-[#A3E635]/50 transition-all p-0.5 shadow-xl" />
+                   <img src={currentUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.username || 'U')}&background=A3E635&color=0F172A`} className="w-10 h-10 lg:w-11 lg:h-11 rounded-xl lg:rounded-2xl border border-white/10 group-hover:border-[#A3E635]/50 transition-all p-0.5 shadow-xl" alt={currentUser.username} />
                    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#A3E635] rounded-full flex items-center justify-center border-2 border-[#0F172A]">
                       <ChevronDown size={8} className="text-slate-950" />
                    </div>
@@ -260,7 +260,7 @@ export const Layout: React.FC<LayoutProps> = ({
         </header>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar relative flex flex-col z-[10]">
-          <div className="flex-1 px-4 sm:px-6 lg:px-10 py-8 lg:py-12" style={{ paddingTop: '6rem' }}>
+          <div className="flex-1 px-3 sm:px-6 lg:px-10 py-4 sm:py-8 lg:py-12">
             {children}
           </div>
           <footer className="w-full py-10 px-4 lg:px-10 border-t border-white/5 mt-auto bg-slate-950/20 backdrop-blur-sm text-center">

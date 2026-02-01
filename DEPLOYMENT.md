@@ -32,12 +32,13 @@ git push origin main
    - **Install Command**: `npm install`
 
 ### 步骤 3：环境变量配置
-在 Vercel 项目设置中添加环境变量：
+在 Vercel 项目设置中添加环境变量（请填入你自己的值）：
 ```
-SUPABASE_URL=https://yxtakzmhxxyqwuppdbmh.supabase.co
-SUPABASE_ANON_KEY=sb_publishable_CrlaPD-RdtOqt6IL0evQEA_P3nvCdjHA
-VITE_GEMINI_API_KEY=AIzaSyBDwfBJ3Go1xqFHE3SvviBn4Ut1dyeRJVA
+SUPABASE_URL=你的Supabase项目URL
+SUPABASE_ANON_KEY=你的Supabase匿名密钥
+GEMINI_API_KEY=你的Gemini API密钥
 ```
+> 在 [Supabase Dashboard](https://supabase.com/dashboard) 和 [Google AI Studio](https://aistudio.google.com/apikey) 获取密钥
 
 ### 步骤 4：部署
 点击 "Deploy" 按钮，等待部署完成！

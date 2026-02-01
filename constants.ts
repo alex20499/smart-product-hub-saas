@@ -79,6 +79,8 @@ export const TRANSLATIONS: Record<Language, any> = {
     vs_global_avg: "VS SEGMENT AVG",
     select_architecture: "Select Data Architecture",
     node_definition_mode: "Node Definition Mode",
+    syncing: "Syncing",
+    cloud_active: "Cloud Active",
     field_types: {
       text: "Text Input",
       number: "Numeric Value",
@@ -164,6 +166,8 @@ export const TRANSLATIONS: Record<Language, any> = {
     vs_global_avg: "对比市场细分均价",
     select_architecture: "选择录入的数据架构",
     node_definition_mode: "节点定义编辑模式",
+    syncing: "同步中",
+    cloud_active: "云端在线",
     field_types: {
       text: "短文本录入",
       number: "数值/金额",
@@ -249,6 +253,8 @@ export const TRANSLATIONS: Record<Language, any> = {
     vs_global_avg: "セグメント平均との比較",
     select_architecture: "データアーキテクチャの選択",
     node_definition_mode: "ノード定義モード",
+    syncing: "同期中",
+    cloud_active: "クラウド接続",
     field_types: {
       text: "テキスト入力",
       number: "数値/金額",
@@ -268,7 +274,8 @@ export const CORE_SYSTEM_FIELDS: ProductField[] = [
   { id: 'brand', name: '品牌', type: FieldType.TEXT, required: true },
   { id: 'model', name: '产品名/型号', type: FieldType.TEXT, required: true },
   { id: 'linkUrl', name: '产品链接', type: FieldType.URL, required: false },
-  { id: 'channel', name: '渠道/平台', type: FieldType.SELECT, required: true, options: ['淘宝', '京东', '拼多多', '天猫', '抖音', '快手', '小红书', '其他'] },
+  { id: 'channel', name: '渠道/平台', type: FieldType.SELECT, required: true, options: ['Amazon', 'Rakuten', 'Yahoo Shopping'] },
+  { id: 'shopName', name: '店铺名', type: FieldType.TEXT, required: false },
   { id: 'price', name: '价格', type: FieldType.NUMBER, required: true },
   { id: 'monthlySales', name: '月销量', type: FieldType.NUMBER, required: false },
   { id: 'rating', name: '评分', type: FieldType.RATING, required: false },
@@ -289,7 +296,7 @@ export const CATEGORY_SPECIFIC_FIELDS: ProductField[] = [
 // 兼容性：保持原有字段定义，但不再用于新表单
 export const BASE_SYSTEM_FIELDS: ProductField[] = [
   { id: 'period', name: '记录日期', type: FieldType.DATE, required: true },
-  { id: 'channel', name: '渠道/平台', type: FieldType.SELECT, required: true, options: ['Amazon.co.jp', '楽天市場', 'Yahoo!JP', 'Qoo10', 'Direct', 'B2B'] },
+  { id: 'channel', name: '渠道/平台', type: FieldType.SELECT, required: true, options: ['Amazon', 'Rakuten', 'Yahoo Shopping'] },
   { id: 'shopName', name: '店铺名', type: FieldType.TEXT, required: false },
   { id: 'brand', name: '品牌', type: FieldType.TEXT, required: true },
   { id: 'model', name: '产品名/型号', type: FieldType.TEXT, required: true },
@@ -313,23 +320,7 @@ export const RESEARCH_FIELDS: ProductField[] = [
 export const INITIAL_FIELDS: ProductField[] = [...BASE_SYSTEM_FIELDS, ...RESEARCH_FIELDS];
 
 const TODAY = new Date().toISOString().split('T')[0];
-export const MOCK_PRODUCTS: ProductData[] = [
-  { 
-    id: 'm1', 
-    period: TODAY, 
-    categoryId: 'cat_powerbank', 
-    channel: 'Amazon.co.jp', 
-    brand: 'Anker', 
-    model: '737 Power Bank (GaNPrime)', 
-    price: 19990, 
-    monthlySales: 4500, 
-    rating: 4.8, 
-    createdAt: Date.now(), 
-    mainImage: 'https://picsum.photos/seed/m1/400/500',
-    dataReliability: '高 (确凿数据)',
-    sellingPoints: '支持PD 3.1 140W双向快充，带智能数显屏。'
-  },
-];
+const NOW = Date.now();
 
 const POWERBANK_FIELDS: ProductField[] = [
   ...BASE_SYSTEM_FIELDS,
@@ -344,7 +335,89 @@ const CHARGER_FIELDS: ProductField[] = [
   { id: 'max_power', name: '总功率 (W)', type: FieldType.NUMBER, required: false },
 ];
 
+const EARBUDS_FIELDS: ProductField[] = [
+  ...BASE_SYSTEM_FIELDS,
+  ...RESEARCH_FIELDS,
+  { id: 'battery_life', name: '续航时间(h)', type: FieldType.NUMBER, required: false },
+  { id: 'bluetooth_version', name: '蓝牙版本', type: FieldType.SELECT, required: false, options: ['5.0', '5.1', '5.2', '5.3'] },
+  { id: 'noise_cancelling', name: '降噪功能', type: FieldType.SELECT, required: false, options: ['主动降噪', '被动降噪', '无'] },
+  { id: 'water_resistance', name: '防水等级', type: FieldType.SELECT, required: false, options: ['IPX4', 'IPX5', 'IPX7', 'IP68'] },
+];
+
+const SMARTWATCH_FIELDS: ProductField[] = [
+  ...BASE_SYSTEM_FIELDS,
+  ...RESEARCH_FIELDS,
+  { id: 'screen_size', name: '屏幕尺寸(英寸)', type: FieldType.NUMBER, required: false },
+  { id: 'compatibility', name: '兼容系统', type: FieldType.TEXT, required: false },
+  { id: 'battery_days', name: '续航天数', type: FieldType.NUMBER, required: false },
+  { id: 'water_resistance', name: '防水等级', type: FieldType.SELECT, required: false, options: ['30m', '50m', '100m', '200m'] },
+];
+
+const LAPTOP_FIELDS: ProductField[] = [
+  ...BASE_SYSTEM_FIELDS,
+  ...RESEARCH_FIELDS,
+  { id: 'cpu_model', name: '处理器型号', type: FieldType.TEXT, required: false },
+  { id: 'ram_gb', name: '内存(GB)', type: FieldType.NUMBER, required: false },
+  { id: 'storage_gb', name: '存储(GB)', type: FieldType.NUMBER, required: false },
+  { id: 'screen_size', name: '屏幕尺寸(英寸)', type: FieldType.NUMBER, required: false },
+  { id: 'weight_kg', name: '重量(kg)', type: FieldType.NUMBER, required: false },
+];
+
+const PHONE_FIELDS: ProductField[] = [
+  ...BASE_SYSTEM_FIELDS,
+  ...RESEARCH_FIELDS,
+  { id: 'screen_size', name: '屏幕尺寸(英寸)', type: FieldType.NUMBER, required: false },
+  { id: 'ram_gb', name: '内存(GB)', type: FieldType.NUMBER, required: false },
+  { id: 'storage_gb', name: '存储(GB)', type: FieldType.NUMBER, required: false },
+  { id: 'battery_mah', name: '电池容量(mAh)', type: FieldType.NUMBER, required: false },
+  { id: 'network_5g', name: '5G网络', type: FieldType.SELECT, required: false, options: ['支持', '不支持'] },
+];
+
+export const MOCK_PRODUCTS: ProductData[] = [
+  // 移动电源 5 条
+  { id: 'm1', period: TODAY, categoryId: 'cat_powerbank', channel: 'Amazon', brand: 'Anker', model: '737 Power Bank (GaNPrime)', price: 199, monthlySales: 4500, rating: 4.8, createdAt: NOW, mainImage: 'https://picsum.photos/seed/m1/400/500', shopName: 'Anker Official', capacity_mah: 24000, max_output: 140, dataReliability: '高 (确凿数据)', sellingPoints: 'PD 3.1 140W双向快充，智能数显屏。' },
+  { id: 'm2', period: TODAY, categoryId: 'cat_powerbank', channel: 'Rakuten', brand: '小米', model: '10000mAh 33W 快充版', price: 89, monthlySales: 12000, rating: 4.6, createdAt: NOW - 86400000, mainImage: 'https://picsum.photos/seed/m2/400/500', shopName: '小米旗舰店', capacity_mah: 10000, max_output: 33, sellingPoints: '高性价比，小米生态链。' },
+  { id: 'm3', period: TODAY, categoryId: 'cat_powerbank', channel: 'Yahoo Shopping', brand: '罗马仕', model: 'Sense 6+ 20000mAh', price: 129, monthlySales: 8000, rating: 4.5, createdAt: NOW - 172800000, mainImage: 'https://picsum.photos/seed/m3/400/500', shopName: 'Romoss Store', capacity_mah: 20000, max_output: 22, sellingPoints: '大容量，双USB输出。' },
+  { id: 'm4', period: TODAY, categoryId: 'cat_powerbank', channel: 'Amazon', brand: '紫米', model: '20号 Pro 25000mAh', price: 369, monthlySales: 3200, rating: 4.9, createdAt: NOW - 259200000, mainImage: 'https://picsum.photos/seed/m4/400/500', shopName: 'ZMI Official', capacity_mah: 25000, max_output: 200, sellingPoints: '专业级，支持笔记本充电。' },
+  { id: 'm5', period: TODAY, categoryId: 'cat_powerbank', channel: 'Rakuten', brand: '品胜', model: 'PB-T20 20000mAh', price: 99, monthlySales: 5600, rating: 4.4, createdAt: NOW - 345600000, mainImage: 'https://picsum.photos/seed/m5/400/500', shopName: 'Pisen Direct', capacity_mah: 20000, max_output: 18, sellingPoints: '国民品牌，稳定耐用。' },
+
+  // 充电器 4 条
+  { id: 'c1', period: TODAY, categoryId: 'cat_charger', channel: 'Amazon', brand: 'Anker', model: 'GaNPrime 120W 三口', price: 269, monthlySales: 2800, rating: 4.8, createdAt: NOW, mainImage: 'https://picsum.photos/seed/c1/400/500', shopName: 'Anker Official', max_power: 120, sellingPoints: 'GaN氮化镓，三设备同时快充。' },
+  { id: 'c2', period: TODAY, categoryId: 'cat_charger', channel: 'Rakuten', brand: '小米', model: '67W 氮化镓套装', price: 149, monthlySales: 6500, rating: 4.7, createdAt: NOW - 86400000, mainImage: 'https://picsum.photos/seed/c2/400/500', shopName: '小米旗舰店', max_power: 67, sellingPoints: '套装含线，性价比高。' },
+  { id: 'c3', period: TODAY, categoryId: 'cat_charger', channel: 'Yahoo Shopping', brand: '绿联', model: '100W 四口氮化镓', price: 199, monthlySales: 4200, rating: 4.6, createdAt: NOW - 172800000, mainImage: 'https://picsum.photos/seed/c3/400/500', shopName: 'UGREEN Store', max_power: 100, sellingPoints: '四口输出，多设备办公。' },
+  { id: 'c4', period: TODAY, categoryId: 'cat_charger', channel: 'Amazon', brand: 'Baseus', model: '65W 氮化镓', price: 89, monthlySales: 9200, rating: 4.5, createdAt: NOW - 259200000, mainImage: 'https://picsum.photos/seed/c4/400/500', shopName: 'Baseus Official', max_power: 65, sellingPoints: '轻薄便携，PD快充。' },
+
+  // 蓝牙耳机 4 条
+  { id: 'e1', period: TODAY, categoryId: 'cat_earbuds', channel: 'Amazon', brand: 'Apple', model: 'AirPods Pro 2', price: 1899, monthlySales: 15000, rating: 4.9, createdAt: NOW, mainImage: 'https://picsum.photos/seed/e1/400/500', shopName: 'Apple Store', battery_life: 6, bluetooth_version: '5.3', noise_cancelling: '主动降噪', water_resistance: 'IPX4', sellingPoints: '空间音频，自适应降噪。' },
+  { id: 'e2', period: TODAY, categoryId: 'cat_earbuds', channel: 'Rakuten', brand: '索尼', model: 'WF-1000XM5', price: 1499, monthlySales: 6200, rating: 4.8, createdAt: NOW - 86400000, mainImage: 'https://picsum.photos/seed/e2/400/500', shopName: 'Sony Direct', battery_life: 8, bluetooth_version: '5.3', noise_cancelling: '主动降噪', water_resistance: 'IPX4', sellingPoints: '业界顶级降噪，LDAC高清。' },
+  { id: 'e3', period: TODAY, categoryId: 'cat_earbuds', channel: 'Yahoo Shopping', brand: '华为', model: 'FreeBuds Pro 3', price: 899, monthlySales: 9800, rating: 4.7, createdAt: NOW - 172800000, mainImage: 'https://picsum.photos/seed/e3/400/500', shopName: 'Huawei VMall', battery_life: 7, bluetooth_version: '5.3', noise_cancelling: '主动降噪', water_resistance: 'IPX4', sellingPoints: '超感知降噪，麒麟A2芯片。' },
+  { id: 'e4', period: TODAY, categoryId: 'cat_earbuds', channel: 'Amazon', brand: '小米', model: 'Buds 4 Pro', price: 699, monthlySales: 11000, rating: 4.6, createdAt: NOW - 259200000, mainImage: 'https://picsum.photos/seed/e4/400/500', shopName: 'Xiaomi Global', battery_life: 9, bluetooth_version: '5.3', noise_cancelling: '主动降噪', water_resistance: 'IPX4', sellingPoints: '48dB降噪，高性价比。' },
+
+  // 智能手表 4 条
+  { id: 's1', period: TODAY, categoryId: 'cat_smartwatch', channel: 'Amazon', brand: 'Apple', model: 'Watch Ultra 2', price: 6499, monthlySales: 4200, rating: 4.9, createdAt: NOW, mainImage: 'https://picsum.photos/seed/s1/400/500', shopName: 'Apple Store', screen_size: 1.92, battery_days: 2, water_resistance: '100m', sellingPoints: '钛金属表壳，双频GPS，潜水级。' },
+  { id: 's2', period: TODAY, categoryId: 'cat_smartwatch', channel: 'Rakuten', brand: '华为', model: 'Watch GT 4', price: 1488, monthlySales: 8500, rating: 4.8, createdAt: NOW - 86400000, mainImage: 'https://picsum.photos/seed/s2/400/500', shopName: 'Huawei VMall', screen_size: 1.43, battery_days: 14, water_resistance: '50m', sellingPoints: '超长续航，健康管理全面。' },
+  { id: 's3', period: TODAY, categoryId: 'cat_smartwatch', channel: 'Yahoo Shopping', brand: '小米', model: 'Watch S3', price: 999, monthlySales: 12000, rating: 4.6, createdAt: NOW - 172800000, mainImage: 'https://picsum.photos/seed/s3/400/500', shopName: 'Xiaomi Global', screen_size: 1.43, battery_days: 15, water_resistance: '50m', sellingPoints: '澎湃OS，百变表圈。' },
+  { id: 's4', period: TODAY, categoryId: 'cat_smartwatch', channel: 'Amazon', brand: 'OPPO', model: 'Watch 4 Pro', price: 2299, monthlySales: 3600, rating: 4.7, createdAt: NOW - 259200000, mainImage: 'https://picsum.photos/seed/s4/400/500', shopName: 'OPPO Store', screen_size: 1.91, battery_days: 5, water_resistance: '50m', sellingPoints: '骁龙W5，eSIM独立通话。' },
+
+  // 笔记本电脑 4 条
+  { id: 'l1', period: TODAY, categoryId: 'cat_laptop', channel: 'Amazon', brand: 'Apple', model: 'MacBook Pro 14 M3 Pro', price: 14999, monthlySales: 2800, rating: 4.9, createdAt: NOW, mainImage: 'https://picsum.photos/seed/l1/400/500', shopName: 'Apple Store', cpu_model: 'M3 Pro', ram_gb: 18, storage_gb: 512, screen_size: 14.2, weight_kg: 1.55, sellingPoints: '专业创作，ProMotion屏幕。' },
+  { id: 'l2', period: TODAY, categoryId: 'cat_laptop', channel: 'Rakuten', brand: '联想', model: 'ThinkPad X1 Carbon', price: 9999, monthlySales: 4500, rating: 4.7, createdAt: NOW - 86400000, mainImage: 'https://picsum.photos/seed/l2/400/500', shopName: 'Lenovo Direct', cpu_model: 'i7-1365U', ram_gb: 16, storage_gb: 512, screen_size: 14, weight_kg: 1.12, sellingPoints: '商务标杆，军工级耐用。' },
+  { id: 'l3', period: TODAY, categoryId: 'cat_laptop', channel: 'Yahoo Shopping', brand: '华为', model: 'MateBook X Pro', price: 8999, monthlySales: 6200, rating: 4.8, createdAt: NOW - 172800000, mainImage: 'https://picsum.photos/seed/l3/400/500', shopName: 'Huawei VMall', cpu_model: 'i7-1360P', ram_gb: 16, storage_gb: 512, screen_size: 14.2, weight_kg: 1.26, sellingPoints: '3.1K触控屏，超级终端。' },
+  { id: 'l4', period: TODAY, categoryId: 'cat_laptop', channel: 'Amazon', brand: '小米', model: 'RedmiBook Pro 15', price: 4999, monthlySales: 9500, rating: 4.5, createdAt: NOW - 259200000, mainImage: 'https://picsum.photos/seed/l4/400/500', shopName: 'Xiaomi Global', cpu_model: 'i5-13500H', ram_gb: 16, storage_gb: 512, screen_size: 15.6, weight_kg: 1.78, sellingPoints: '3.2K高刷屏，高性价比。' },
+
+  // 智能手机 5 条
+  { id: 'p1', period: TODAY, categoryId: 'cat_phone', channel: 'Amazon', brand: 'Apple', model: 'iPhone 15 Pro Max', price: 9999, monthlySales: 22000, rating: 4.9, createdAt: NOW, mainImage: 'https://picsum.photos/seed/p1/400/500', shopName: 'Apple Store', screen_size: 6.7, ram_gb: 8, storage_gb: 256, battery_mah: 4422, network_5g: '支持', sellingPoints: 'A17 Pro，钛金属，动作按钮。' },
+  { id: 'p2', period: TODAY, categoryId: 'cat_phone', channel: 'Rakuten', brand: '华为', model: 'Mate 60 Pro+', price: 8999, monthlySales: 18000, rating: 4.8, createdAt: NOW - 86400000, mainImage: 'https://picsum.photos/seed/p2/400/500', shopName: 'Huawei VMall', screen_size: 6.82, ram_gb: 12, storage_gb: 512, battery_mah: 5000, network_5g: '支持', sellingPoints: '麒麟9000s，卫星通信，鸿蒙4。' },
+  { id: 'p3', period: TODAY, categoryId: 'cat_phone', channel: 'Yahoo Shopping', brand: '小米', model: '14 Ultra', price: 5999, monthlySales: 12000, rating: 4.7, createdAt: NOW - 172800000, mainImage: 'https://picsum.photos/seed/p3/400/500', shopName: 'Xiaomi Global', screen_size: 6.73, ram_gb: 16, storage_gb: 512, battery_mah: 5000, network_5g: '支持', sellingPoints: '徕卡Summilux，可变光圈。' },
+  { id: 'p4', period: TODAY, categoryId: 'cat_phone', channel: 'Amazon', brand: 'OPPO', model: 'Find X7 Ultra', price: 5999, monthlySales: 8500, rating: 4.8, createdAt: NOW - 259200000, mainImage: 'https://picsum.photos/seed/p4/400/500', shopName: 'OPPO Store', screen_size: 6.82, ram_gb: 16, storage_gb: 512, battery_mah: 5000, network_5g: '支持', sellingPoints: '双潜望长焦，哈苏影像。' },
+  { id: 'p5', period: TODAY, categoryId: 'cat_phone', channel: 'Rakuten', brand: 'vivo', model: 'X100 Pro', price: 4999, monthlySales: 14000, rating: 4.7, createdAt: NOW - 345600000, mainImage: 'https://picsum.photos/seed/p5/400/500', shopName: 'vivo Direct', screen_size: 6.78, ram_gb: 16, storage_gb: 512, battery_mah: 5400, network_5g: '支持', sellingPoints: '天玑9300，蔡司APO长焦。' },
+];
+
 export const DEFAULT_CATEGORIES: Category[] = [
-  { id: 'cat_powerbank', name: '移动电源 (3C)', fields: POWERBANK_FIELDS },
-  { id: 'cat_charger', name: '充电器/适配器 (3C)', fields: CHARGER_FIELDS }
+  { id: 'cat_powerbank', name: '充电宝', fields: POWERBANK_FIELDS },
+  { id: 'cat_charger', name: '充电器/适配器', fields: CHARGER_FIELDS },
+  { id: 'cat_earbuds', name: '蓝牙耳机', fields: EARBUDS_FIELDS },
+  { id: 'cat_smartwatch', name: '智能手表', fields: SMARTWATCH_FIELDS },
+  { id: 'cat_laptop', name: '笔记本电脑', fields: LAPTOP_FIELDS },
+  { id: 'cat_phone', name: '智能手机', fields: PHONE_FIELDS },
 ];

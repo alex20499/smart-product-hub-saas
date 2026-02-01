@@ -11,10 +11,10 @@ import { AppState, Category, ProductData, User, Language } from './types';
 import { DEFAULT_CATEGORIES, STORAGE_KEY, MOCK_PRODUCTS, TRANSLATIONS } from './constants';
 import { ShieldAlert, RefreshCw } from 'lucide-react';
 
-const SUPABASE_URL = 'https://yxtakzmhxxyqwuppdbmh.supabase.co'; 
-const SUPABASE_ANON_KEY = 'sb_publishable_CrlaPD-RdtOqt6IL0evQEA_P3nvCdjH'; 
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = createClient(
+  process.env.SUPABASE_URL || '',
+  process.env.SUPABASE_ANON_KEY || ''
+);
 
 const INITIAL_USERS: User[] = [
   { id: '1', username: 'admin', password: 'password', role: 'admin', avatar: 'https://picsum.photos/seed/admin/32/32' }
@@ -67,6 +67,8 @@ const App: React.FC = () => {
   const fetchFromCloud = useCallback(async (silent = false) => {
     if (!silent) setIsSyncing(true);
     try {
+      console.log('🔄 开始同步数据...');
+      
       // 采用更稳健的 Promise.allSettled 避免单一接口挂掉导致全局崩溃
       const results = await Promise.allSettled([
         supabase.from('categories').select('*'),
@@ -80,27 +82,44 @@ const App: React.FC = () => {
       let cloudTemplates: any[] = [];
       let cloudUsers: any[] = [];
 
-      if (results[0].status === 'fulfilled' && !results[0].value.error) cloudCats = results[0].value.data || [];
-      if (results[1].status === 'fulfilled' && !results[1].value.error) cloudProds = results[1].value.data || [];
-      if (results[2].status === 'fulfilled' && !results[2].value.error) cloudTemplates = results[2].value.data || [];
-      if (results[3].status === 'fulfilled' && !results[3].value.error) cloudUsers = results[3].value.data || [];
+      if (results[0].status === 'fulfilled' && !results[0].value.error) {
+        cloudCats = results[0].value.data || [];
+        console.log('📋 品类数据:', cloudCats.length, '条');
+      }
+      if (results[1].status === 'fulfilled' && !results[1].value.error) {
+        cloudProds = results[1].value.data || [];
+        console.log('📦 产品数据:', cloudProds.length, '条');
+      }
+      if (results[2].status === 'fulfilled' && !results[2].value.error) {
+        cloudTemplates = results[2].value.data || [];
+        console.log('🏷️ 模板数据:', cloudTemplates.length, '条');
+      }
+      if (results[3].status === 'fulfilled' && !results[3].value.error) {
+        cloudUsers = results[3].value.data || [];
+        console.log('👥 用户数据:', cloudUsers.length, '条');
+      }
 
       // 将品类模板转换为前端需要的 Category.fields 格式
       const categoriesWithFields = cloudCats.map((cat: any) => {
         const templates = cloudTemplates.filter((t: any) => t.category_id === cat.id && t.is_active);
-        const fields = templates.map((t: any) => ({
-          id: t.field_key,
-          name: t.field_name,
-          type: t.field_type,
-          required: t.is_required,
-          options: t.options ? Object.values(t.options) : undefined,
-          isSystem: false
-        }));
+        const fields = templates
+          .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+          .map((t: any) => ({
+            id: t.field_key,
+            name: t.field_name,
+            type: t.field_type,
+            required: t.is_required,
+            options: Array.isArray(t.options) ? t.options : t.options ? Object.values(t.options) : undefined,
+            isSystem: false
+          }));
+        console.log(`🏷️ 品类 ${cat.name}:`, fields.length, '个字段');
         return {
           ...cat,
           fields
         };
       });
+
+      console.log('✅ 数据转换完成，品类数量:', categoriesWithFields.length);
 
       // 转换产品数据，合并固定字段和 attributes
       const productsWithAttributes = cloudProds.map((p: any) => {
@@ -154,13 +173,13 @@ const App: React.FC = () => {
       
       // 分离核心固定字段和动态字段
       const fixedFields = {
-        id: 'p_' + Math.random().toString(36).substr(2, 9),
         category_id: categoryId,
         // 核心字段：所有品类共有
         brand: restData.brand || '',
         model: restData.model || '',
         link_url: restData.linkUrl || '',
         channel: restData.channel || '',
+        shop_name: restData.shopName || '',
         price: Number(restData.price || 0),
         monthly_sales: Number(restData.monthlySales || 0),
         rating: Number(restData.rating || 0),
@@ -178,13 +197,12 @@ const App: React.FC = () => {
       delete dynamicFields.model;
       delete dynamicFields.linkUrl;
       delete dynamicFields.channel;
+      delete dynamicFields.shopName;
       delete dynamicFields.price;
       delete dynamicFields.monthlySales;
       delete dynamicFields.rating;
       delete dynamicFields.mainImage;
-      // 移除其他可能的非核心字段
       delete dynamicFields.actualPrice;
-      delete dynamicFields.shopName;
       
       const payload = {
         ...fixedFields,
@@ -197,6 +215,8 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.error('Product add error:', err);
       setDiagnostic({ msg: err?.message || '添加产品失败', code: 'ADD_ERROR' });
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -214,6 +234,7 @@ const App: React.FC = () => {
         model: restData.model || '',
         link_url: restData.linkUrl || '',
         channel: restData.channel || '',
+        shop_name: restData.shopName || '',
         price: Number(restData.price || 0),
         monthly_sales: Number(restData.monthlySales || 0),
         rating: Number(restData.rating || 0),
@@ -230,13 +251,12 @@ const App: React.FC = () => {
       delete dynamicFields.model;
       delete dynamicFields.linkUrl;
       delete dynamicFields.channel;
+      delete dynamicFields.shopName;
       delete dynamicFields.price;
       delete dynamicFields.monthlySales;
       delete dynamicFields.rating;
       delete dynamicFields.mainImage;
-      // 移除其他可能的非核心字段
       delete dynamicFields.actualPrice;
-      delete dynamicFields.shopName;
       
       const payload = {
         ...fixedFields,
@@ -249,6 +269,8 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.error('Product update error:', err);
       setDiagnostic({ msg: err?.message || '更新产品失败', code: 'UPDATE_ERROR' });
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -261,9 +283,63 @@ const App: React.FC = () => {
 
   const handleUpdateCategories = async (newCategories: Category[]) => {
     setIsSyncing(true);
-    const { error } = await supabase.from('categories').upsert(newCategories);
-    if (error) setDiagnostic({ msg: error.message, code: error.code });
-    await fetchFromCloud(true);
+    try {
+      // 1. 仅同步品类基础数据到 categories 表（不含 fields，该列不存在）
+      const categoryRows = newCategories.map((c) => ({
+        id: c.id,
+        name: c.name,
+        description: c.description ?? null,
+        icon: c.icon ?? null,
+        sort_order: 0,
+        is_active: true
+      }));
+      const { error: catError } = await supabase.from('categories').upsert(categoryRows, { onConflict: 'id' });
+      if (catError) {
+        setDiagnostic({ msg: catError.message, code: catError.code });
+        setIsSyncing(false);
+        return;
+      }
+
+      // 2. 将 fields 同步到 category_templates 表
+      for (const cat of newCategories) {
+        const fields = cat.fields || [];
+        // 删除该品类下已不在新列表中的模板
+        const keepKeys = fields.map((f) => f.id);
+        const { data: existing } = await supabase
+          .from('category_templates')
+          .select('id, field_key')
+          .eq('category_id', cat.id);
+        if (existing?.length) {
+          const toDelete = existing.filter((t) => !keepKeys.includes(t.field_key)).map((t) => t.id);
+          for (const id of toDelete) {
+            await supabase.from('category_templates').delete().eq('id', id);
+          }
+        }
+        // 逐个 upsert 字段模板
+        for (let i = 0; i < fields.length; i++) {
+          const f = fields[i];
+          const templateRow = {
+            category_id: cat.id,
+            field_key: f.id,
+            field_name: f.name,
+            field_type: (f.type || 'text').toString().toLowerCase(),
+            is_required: !!f.required,
+            options: f.options && f.options.length > 0 ? f.options : null,
+            sort_order: i,
+            is_active: true
+          };
+          await supabase.from('category_templates').upsert(templateRow, {
+            onConflict: 'category_id,field_key'
+          });
+        }
+      }
+      await fetchFromCloud(true);
+    } catch (err: any) {
+      console.error('handleUpdateCategories error:', err);
+      setDiagnostic({ msg: err?.message || '更新品类失败', code: 'UPDATE_CAT_ERROR' });
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleCategoryDelete = async (id: string) => {
@@ -275,14 +351,24 @@ const App: React.FC = () => {
 
   const handleUserAdd = async (user: User) => {
     setIsSyncing(true);
-    const { error } = await supabase.from('users').insert([user]);
+    // users 表无 avatar 列，只插入 DB 存在的字段
+    const { error } = await supabase.from('users').insert([{
+      id: user.id,
+      username: user.username,
+      password: user.password || '',
+      role: user.role,
+      email: null
+    }]);
     if (error) setDiagnostic({ msg: error.message, code: error.code });
     await fetchFromCloud(true);
   };
 
   const handleUserUpdate = async (user: User) => {
     setIsSyncing(true);
-    const { error } = await supabase.from('users').update(user).eq('id', user.id);
+    // users 表无 avatar 列，只更新 DB 存在的字段；密码为空则不更新密码
+    const payload: Record<string, unknown> = { username: user.username, role: user.role };
+    if (user.password && user.password.trim()) payload.password = user.password.trim();
+    const { error } = await supabase.from('users').update(payload).eq('id', user.id);
     if (error) setDiagnostic({ msg: error.message, code: error.code });
     await fetchFromCloud(true);
   };
@@ -329,21 +415,21 @@ const App: React.FC = () => {
     >
       <div className="h-full relative">
         {diagnostic && (
-          <div className="fixed inset-x-0 top-0 z-[1000] p-4 lg:p-8 animate-in slide-in-from-top duration-700">
-             <div className="max-w-4xl mx-auto bg-slate-900 border border-red-500/30 rounded-[3rem] shadow-2xl overflow-hidden p-8 lg:p-12 space-y-6">
-                <div className="flex items-center gap-5 text-red-500">
-                   <ShieldAlert size={28} />
-                   <h3 className="text-xl font-black uppercase text-white">System Protocol Diagnostic</h3>
+          <div className="fixed inset-x-0 top-0 z-[1000] p-3 sm:p-4 lg:p-8 animate-in slide-in-from-top duration-700 overflow-y-auto max-h-[100dvh]">
+             <div className="max-w-4xl mx-auto bg-slate-900 border border-red-500/30 rounded-2xl sm:rounded-[3rem] shadow-2xl overflow-hidden p-4 sm:p-6 lg:p-12 space-y-4 sm:space-y-6">
+                <div className="flex items-center gap-3 sm:gap-5 text-red-500">
+                   <ShieldAlert size={22} className="sm:w-7 sm:h-7 shrink-0" />
+                   <h3 className="text-base sm:text-xl font-black uppercase text-white truncate">System Protocol Diagnostic</h3>
                 </div>
-                <div className="bg-black/40 p-6 rounded-3xl border border-white/5 font-mono text-[11px] text-slate-300">
+                <div className="bg-black/40 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-white/5 font-mono text-[10px] sm:text-[11px] text-slate-300 break-words">
                    <p className="text-red-400">STATUS_CODE: {diagnostic.code}</p>
-                   <p className="mt-2">MESSAGE: {diagnostic.msg}</p>
+                   <p className="mt-2 break-all">MESSAGE: {diagnostic.msg}</p>
                 </div>
-                <div className="flex gap-4">
-                  <button onClick={() => { setDiagnostic(null); fetchFromCloud(); }} className="flex-1 py-5 bg-white text-slate-950 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                  <button onClick={() => { setDiagnostic(null); fetchFromCloud(); }} className="flex-1 py-4 sm:py-5 bg-white text-slate-950 rounded-xl sm:rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
                     <RefreshCw size={14} /> Re-sync Node
                   </button>
-                  <button onClick={() => setDiagnostic(null)} className="px-10 py-5 bg-slate-800 text-slate-400 rounded-2xl font-black text-[10px] uppercase tracking-widest">Acknowledge</button>
+                  <button onClick={() => setDiagnostic(null)} className="px-6 sm:px-10 py-4 sm:py-5 bg-slate-800 text-slate-400 rounded-xl sm:rounded-2xl font-black text-[10px] uppercase tracking-widest">Acknowledge</button>
                 </div>
              </div>
           </div>

@@ -1,8 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-// 直接使用环境变量（无需dotenv）
-const supabaseUrl = 'https://yxtakzmhxxyqwuppdbmh.supabase.co';
-const supabaseKey = 'sb_publishable_CrlaPD-RdtOqt6IL0evQEA_P3nvCdjH';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const envPath = join(__dirname, '.env');
+let supabaseUrl = '';
+let supabaseKey = '';
+try {
+  const env = readFileSync(envPath, 'utf8');
+  env.split('\n').forEach(line => {
+    const [k, v] = line.split('=').map(s => s?.trim());
+    if (k === 'SUPABASE_URL' && v) supabaseUrl = (v || '').replace(/^["']|["']$/g, '');
+    if (k === 'SUPABASE_ANON_KEY' && v) supabaseKey = (v || '').replace(/^["']|["']$/g, '');
+  });
+} catch (_) {}
+if (!supabaseUrl || !supabaseKey) {
+  console.error('请在项目根目录 .env 中配置 SUPABASE_URL 和 SUPABASE_ANON_KEY');
+  process.exit(1);
+}
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
