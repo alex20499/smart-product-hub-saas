@@ -10,7 +10,7 @@ import {
   ArrowLeft, Calendar, ShieldCheck, Database, Lock, Trophy,
   ThumbsUp, ThumbsDown, AlertTriangle, Brain
 } from 'lucide-react';
-import { ProductData, Category, FieldType } from '../types';
+import { ProductData, ProductField, Category, FieldType } from '../types';
 import { callGemini, simplifyForAI } from '../utils/gemini';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, 
@@ -200,7 +200,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
             <div className="size-10 bg-[#A3E635] rounded-2xl flex items-center justify-center text-slate-950 shadow-[0_0_30_px_rgba(163,230,53,0.3)]">
                <Activity size={20} />
             </div>
-            <h2 className="text-3xl sm:text-5xl font-black tracking-tighter uppercase text-white leading-none italic">{t('market_intel')}</h2>
+            <h2 className="text-3xl sm:text-5xl font-black tracking-normal uppercase text-white leading-none">{t('market_intel')}</h2>
           </div>
           <p className="text-[11px] font-black text-slate-500 uppercase tracking-[0.4em] ml-1">{t('benchmarking_protocol')}</p>
         </div>
@@ -283,7 +283,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                  <p className="text-[11px] font-black uppercase tracking-widest">{t('ai_analysis')}</p>
                  <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-[9px] rounded-md border border-green-500/20">✓ 完成</span>
               </div>
-              <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap italic font-medium text-left">
+              <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-medium text-left">
                  {globalAiAnalysis}
               </div>
            </div>
@@ -295,14 +295,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
           <div className="premium-card p-10 flex flex-col justify-between min-h-[220px] bg-slate-900/40 border-white/5 text-left group">
              <div className="flex items-center justify-between opacity-50 group-hover:opacity-100 transition-opacity"><Percent size={20} /> <span className="text-[9px] font-black uppercase tracking-widest">{t('market_penetration')}</span></div>
              <div>
-                <h3 className="text-4xl lg:text-6xl font-black tracking-tighter text-white font-num">{tacticalMetrics.marketShare.toFixed(1)}%</h3>
+                <h3 className="text-4xl lg:text-6xl font-black tracking-normal text-white font-num">{tacticalMetrics.marketShare.toFixed(1)}%</h3>
                 <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mt-4 leading-relaxed uppercase">{t('market_share')}</p>
              </div>
           </div>
           <div className="premium-card p-10 flex flex-col justify-between min-h-[220px] border-[#A3E635]/20 text-left group">
              <div className="flex items-center justify-between text-[#A3E635]"><ShoppingCart size={20} /> <span className="text-[9px] font-black uppercase tracking-widest">{t('price_competitiveness')}</span></div>
              <div>
-                <h3 className="text-4xl lg:text-6xl font-black tracking-tighter text-white font-num">{Math.round(tacticalMetrics.priceIndex)}<span className="text-xl ml-2 text-slate-500 uppercase">Index</span></h3>
+                <h3 className="text-4xl lg:text-6xl font-black tracking-normal text-white font-num">{Math.round(tacticalMetrics.priceIndex)}<span className="text-xl ml-2 text-slate-500 uppercase">Index</span></h3>
                 <div className="flex items-center gap-2 mt-4">
                    <div className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${tacticalMetrics.priceIndex > 100 ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}>
                       {tacticalMetrics.priceIndex > 100 ? 'PREMIUM POS' : 'BUDGET POS'}
@@ -314,8 +314,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
           <div className="premium-card p-10 flex flex-col justify-between min-h-[220px] border-[#818CF8]/20 text-left group">
              <div className="flex items-center justify-between text-[#818CF8]"><TrendingUp size={20} /> <span className="text-[9px] font-black uppercase tracking-widest">{t('segment_volume')}</span></div>
              <div>
-                <h3 className="text-4xl lg:text-6xl font-black tracking-tighter text-white font-num">{tacticalMetrics.segmentSales.toLocaleString()}</h3>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mt-4 italic font-bold">UNITS EXECUTED IN CURRENT VIEW</p>
+                <h3 className="text-4xl lg:text-6xl font-black tracking-normal text-white font-num">{tacticalMetrics.segmentSales.toLocaleString()}</h3>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mt-4 font-bold">UNITS EXECUTED IN CURRENT VIEW</p>
              </div>
           </div>
       </div>
@@ -418,7 +418,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                  style={{ animationDelay: `${idx * 50}ms` }}
                >
                   <div className="flex items-center gap-8 flex-1 w-full">
-                     <div className="text-2xl font-black text-slate-800 font-num italic w-10 group-hover:text-[#A3E635] transition-colors">#{idx + 1}</div>
+                     <div className="text-2xl font-black text-slate-800 font-num w-10 group-hover:text-[#A3E635] transition-colors">#{idx + 1}</div>
                      <div className="size-16 bg-slate-950 rounded-2xl overflow-hidden p-2 border border-white/5 shrink-0">
                         {product?.mainImage ? <img src={product.mainImage} className="w-full h-full object-contain" alt="" /> : <Package className="text-slate-800 size-full" />}
                      </div>
@@ -434,7 +434,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                   <div className="flex items-center gap-12 shrink-0">
                      <div className="text-right space-y-1">
                         <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest">{t('market_value')}</p>
-                        <p className="text-lg font-black text-white italic font-num">¥{(Number(product?.price) || 0).toLocaleString()}</p>
+                        <p className="text-lg font-black text-white font-num">¥{(Number(product?.price) || 0).toLocaleString()}</p>
                      </div>
                      <div className="text-right space-y-1">
                         <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest">{t('velocity')}</p>
@@ -488,11 +488,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                           <div className="px-3 py-1 bg-slate-800 border border-white/5 text-slate-400 text-[9px] font-black uppercase tracking-widest rounded-lg">{detailedProduct?.brand || '未知品牌'}</div>
                           <div className="px-3 py-1 bg-[#A3E635]/10 border border-[#A3E635]/20 text-[#A3E635] text-[9px] font-black uppercase tracking-widest rounded-lg">{detailedCategory?.name || '—'}</div>
                        </div>
-                       <h1 className="text-2xl sm:text-4xl font-black text-white uppercase tracking-tighter leading-tight">{detailedProduct?.model || '未命名产品'}</h1>
+                       <h1 className="text-2xl sm:text-4xl font-black text-white uppercase tracking-normal leading-tight">{detailedProduct?.model || '未命名产品'}</h1>
                        <div className="grid grid-cols-2 gap-4 sm:gap-8 border-b border-white/5 pb-6 sm:pb-10">
                           <div>
                              <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('price')}</p>
-                             <p className="text-2xl sm:text-4xl font-black text-white italic font-num">¥{(Number(detailedProduct?.price) || 0).toLocaleString()}</p>
+                             <p className="text-2xl sm:text-4xl font-black text-white font-num">¥{(Number(detailedProduct?.price) || 0).toLocaleString()}</p>
                           </div>
                           <div>
                              <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('volume')}</p>
@@ -505,7 +505,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                                 {Array.from({length: 5}).map((_, i) => (
                                   <Star key={i} size={16} fill={i < Number(detailedProduct?.rating) ? "#A3E635" : "transparent"} className={i < Number(detailedProduct?.rating) ? "text-[#A3E635]" : "text-slate-800"} />
                                 ))}
-                                <span className="ml-2 text-xl font-black text-white font-num">{detailedProduct?.rating}</span>
+                                <span className="ml-2 text-xl font-black text-white font-num">{(Number(detailedProduct?.rating) || 0).toFixed(2)}</span>
                              </div>
                           </div>
                           )}
@@ -519,26 +519,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                           </div>
                           ))}
                        </div>
-                       {/* 全部字段展示（与 ProductInventory 一致） */}
+                       {/* 品类自定义字段 - 按后台配置展示，使用用户创建字段名称 */}
                        <div className="space-y-4 sm:space-y-6">
                           <div className="flex items-center gap-2 border-b border-white/5 pb-3">
                              <Database size={16} className="text-slate-500" />
                              <p className="text-[10px] font-black text-white uppercase tracking-widest">{t('full_node_data')}</p>
                           </div>
-                          {Object.entries(detailedProduct || {}).map(([key, val]) => {
-                             if (['id', 'categoryId', 'createdAt', 'updatedAt', 'updatedBy', 'mainImage', 'price', 'monthlySales', 'model', 'brand', 'channel', 'linkUrl', 'rating'].includes(key)) return null;
-                             if (val === undefined || val === null || val === '') return null;
-                             if (key === 'attributes' && typeof val === 'object') return null; // 已展开，不重复显示
-                             const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).replace(/_/g, ' ');
-                             return (
-                               <div key={key} className="space-y-1 sm:space-y-1.5 text-left">
-                                  <p className="text-[7px] sm:text-[8px] font-black text-slate-600 uppercase tracking-widest">{label}</p>
-                                  <div className="text-[10px] sm:text-[11px] font-medium text-slate-300 leading-relaxed normal-case bg-white/5 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-white/5">
-                                     {typeof val === 'object' ? JSON.stringify(val) : String(val)}
-                                  </div>
-                               </div>
-                             );
-                          })}
+                          {(() => {
+                             const FIXED_IDS = ['brand', 'model', 'linkUrl', 'channel', 'shopName', 'price', 'monthlySales', 'rating', 'mainImage', 'link_url', 'main_image'];
+                             const customFields = (detailedCategory?.fields ?? []).filter((f: ProductField) => f?.id && f?.name && !FIXED_IDS.includes(f.id));
+                             const getVal = (f: ProductField) => detailedProduct?.[f.id] ?? detailedProduct?.attributes?.[f.id];
+                             const formatVal = (v: unknown, isMultiQty?: boolean) => {
+                               if (v === undefined || v === null || v === '') return '—';
+                               if (Array.isArray(v)) return v.join(', ');
+                               if (typeof v === 'object' && v !== null) {
+                                 const entries = Object.entries(v).filter(([, n]) => n != null && n !== '');
+                                 if (isMultiQty && entries.length > 0) return entries.map(([k, n]) => `${k}×${n}`).join(' · ');
+                                 return JSON.stringify(v);
+                               }
+                               return String(v);
+                             };
+                             return customFields.map((field: ProductField) => {
+                               const val = getVal(field);
+                               const isMultiQty = field.type === FieldType.MULTI_SELECT_QUANTITY;
+                               return (
+                                 <div key={field.id} className="space-y-1 sm:space-y-1.5 text-left">
+                                   <p className="text-[7px] sm:text-[8px] font-black text-slate-600 uppercase tracking-widest">{field.name}</p>
+                                   <div className="text-[10px] sm:text-[11px] font-medium text-slate-300 leading-relaxed normal-case bg-white/5 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-white/5">
+                                     {formatVal(val, isMultiQty)}
+                                   </div>
+                                 </div>
+                               );
+                             });
+                          })()}
                        </div>
                     </div>
                  </div>
@@ -563,11 +576,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                          <div className="size-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white"><Sparkles size={20} /></div>
                          <div>
                             <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('ai_tactical_analysis')}</h4>
-                            <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mt-1 italic">Generated via Gemini Node</p>
+                            <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mt-1">Generated via Gemini Node</p>
                          </div>
                       </div>
                       <div className="prose prose-invert max-w-none">
-                         <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap italic font-medium">{aiAnalysis}</div>
+                         <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-medium">{aiAnalysis}</div>
                       </div>
                    </div>
                  )}
@@ -582,7 +595,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                           <div className="size-10 bg-blue-600 rounded-xl flex items-center justify-center text-white"><Star size={20} /></div>
                           <div>
                              <h4 className="text-[12px] font-black uppercase tracking-widest text-white">核心卖点</h4>
-                             <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest mt-1 italic">Product Selling Points</p>
+                             <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest mt-1">Product Selling Points</p>
                           </div>
                        </div>
                        <div className="flex flex-wrap gap-3">
@@ -604,7 +617,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                           <div className="size-10 bg-gradient-to-r from-green-500 to-red-500 rounded-xl flex items-center justify-center text-white"><MessageSquare size={20} /></div>
                           <div>
                              <h4 className="text-[12px] font-black uppercase tracking-widest text-white">口碑对比</h4>
-                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1 italic">Customer Voice Analysis</p>
+                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">Customer Voice Analysis</p>
                           </div>
                        </div>
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -650,7 +663,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                           </div>
                           <div className="flex-1">
                              <h4 className="text-[12px] font-black uppercase tracking-widest text-red-400">⚠️ 关键痛点</h4>
-                             <p className="text-[8px] font-black text-red-600 uppercase tracking-widest mt-1 italic">Critical Customer Pain Point</p>
+                             <p className="text-[8px] font-black text-red-600 uppercase tracking-widest mt-1">Critical Customer Pain Point</p>
                           </div>
                        </div>
                        <div className="p-6 bg-red-500/10 border-2 border-red-500/30 rounded-2xl">
@@ -667,11 +680,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                           <div className="size-10 bg-purple-600 rounded-xl flex items-center justify-center text-white"><Brain size={20} /></div>
                           <div>
                              <h4 className="text-[12px] font-black uppercase tracking-widest text-white">贾维斯洞察</h4>
-                             <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest mt-1 italic">Market Opportunity Analysis</p>
+                             <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest mt-1">Market Opportunity Analysis</p>
                           </div>
                        </div>
                        <div className="prose prose-invert max-w-none">
-                          <div className="text-purple-300 text-sm leading-relaxed whitespace-pre-wrap italic font-medium">{detailedProduct?.insight_summary ?? detailedProduct?.attributes?.insight_summary}</div>
+                          <div className="text-purple-300 text-sm leading-relaxed whitespace-pre-wrap font-medium">{detailedProduct?.insight_summary ?? detailedProduct?.attributes?.insight_summary}</div>
                        </div>
                     </div>
                  )}

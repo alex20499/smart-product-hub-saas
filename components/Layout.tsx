@@ -198,7 +198,7 @@ export const Layout: React.FC<LayoutProps> = ({
               <Menu size={22} />
             </button>
             <div className="flex items-center gap-3">
-               <h1 className="text-sm lg:text-lg font-black text-white uppercase tracking-tighter truncate max-w-[100px] sm:max-w-none">{APP_NAME}</h1>
+               <h1 className="text-sm lg:text-lg font-black text-white uppercase tracking-normal truncate max-w-[100px] sm:max-w-none">{APP_NAME}</h1>
                <div className="h-4 w-px bg-white/10 mx-2 hidden sm:block"></div>
                <div className="hidden sm:flex items-center gap-2">
                  <div className="flex items-center gap-1.5 px-3 py-1 bg-[#A3E635]/10 rounded-full border border-[#A3E635]/20">

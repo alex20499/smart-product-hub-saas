@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Plus, Trash2, X, Package, Edit2, 
   Image as ImageIcon, Check, LayoutGrid, ChevronDown, 
@@ -9,6 +10,7 @@ import {
   ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, AlertTriangle, Brain
 } from 'lucide-react';
 import { ProductData, ProductField, FieldType, User, Category } from '../types';
+import { DEFAULT_CHANNEL_OPTIONS } from '../constants';
 import { callGemini, simplifyForAI } from '../utils/gemini';
 
 interface ProductInventoryProps {
@@ -16,7 +18,7 @@ interface ProductInventoryProps {
   categories: Category[];
   onAdd: (data: any) => void;
   onUpdate: (id: string, data: any) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => void | Promise<void>;
   currentUser: User;
   isAddModalOpen: boolean;
   setIsAddModalOpen: (open: boolean) => void;
@@ -66,25 +68,60 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
       reader.onload = (event) => onChange(event.target?.result as string);
       reader.readAsDataURL(file);
     }
+    e.target.value = '';
   };
 
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (ev) => onChange(ev.target?.result as string);
+          reader.readAsDataURL(file);
+        }
+        return;
+      }
+    }
+    const text = e.clipboardData?.getData('text');
+    if (text && (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('//'))) {
+      e.preventDefault();
+      onChange(text.startsWith('//') ? 'https:' + text : text);
+    }
+  };
+
+  const showInInput = value && (value.startsWith('http://') || value.startsWith('https://'));
+
   return (
-    <div className="relative group">
-      <div className={`w-full min-h-[160px] bg-slate-900/50 border-2 border-dashed rounded-3xl transition-all flex flex-col items-center justify-center p-6 gap-3 ${value ? 'border-[#A3E635]/30' : 'border-white/5 hover:border-[#A3E635]/40 hover:bg-slate-800/50'}`}>
-        {value ? (
-          <div className="relative w-full h-32 rounded-xl overflow-hidden shadow-inner bg-slate-950">
-            <img src={value} className="w-full h-full object-contain p-2" alt="Preview" />
-            <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
-              <button type="button" onClick={() => onChange('')} className="p-3 bg-red-500/20 text-red-400 rounded-xl border border-red-500/30 hover:bg-red-500 hover:text-white transition-all"><Trash2 size={16} /></button>
+    <div className="space-y-3" onPaste={handlePaste}>
+      <input
+        type="url"
+        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner placeholder:text-slate-600"
+        placeholder="粘贴图片链接（从电商页右键主图「复制图片地址」后 Ctrl+V）"
+        value={showInInput ? value : ''}
+        title={showInInput ? value : undefined}
+        onChange={e => onChange(e.target.value.trim())}
+      />
+      <div className="relative group">
+        <div className={`w-full min-h-[120px] bg-slate-900/50 border-2 border-dashed rounded-2xl transition-all flex flex-col items-center justify-center p-4 gap-2 ${value ? 'border-[#A3E635]/30' : 'border-white/5 hover:border-[#A3E635]/40 hover:bg-slate-800/50'}`}>
+          {value ? (
+            <div className="relative w-full h-28 rounded-xl overflow-hidden shadow-inner bg-slate-950">
+              <img src={value} className="w-full h-full object-contain p-2" alt="Preview" />
+              <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                <button type="button" onClick={() => onChange('')} className="p-2 bg-red-500/20 text-red-400 rounded-xl border border-red-500/30 hover:bg-red-500 hover:text-white transition-all"><Trash2 size={14} /></button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="text-center">
-            <div className="size-12 bg-slate-950 rounded-2xl flex items-center justify-center text-slate-700 mx-auto mb-3 shadow-inner"><ImageIcon size={24} /></div>
-            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">{placeholder}</p>
-          </div>
-        )}
-        <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+          ) : (
+            <div className="text-center">
+              <div className="size-10 bg-slate-950 rounded-xl flex items-center justify-center text-slate-700 mx-auto mb-2 shadow-inner"><ImageIcon size={20} /></div>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">或点击上传本地图片</p>
+            </div>
+          )}
+          <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+        </div>
       </div>
     </div>
   );
@@ -119,9 +156,12 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   // AI竞品对策状态
   const [competitorAnalysis, setCompetitorAnalysis] = useState<string | null>(null);
   const [isCompetitorAnalyzing, setIsCompetitorAnalyzing] = useState(false);
+  const [actionsOpenId, setActionsOpenId] = useState<string | null>(null);
+  const [actionsAnchorRect, setActionsAnchorRect] = useState<DOMRect | null>(null);
 
   const canEdit = currentUser.role === 'admin' || currentUser.role === 'editor';
   const channels = useMemo(() => Array.from(new Set(products.map(p => p?.channel).filter(Boolean))).sort(), [products]);
+  const channelOptionsForForm = useMemo(() => [...new Set([...channels, ...DEFAULT_CHANNEL_OPTIONS])].sort(), [channels]);
 
   const filteredProducts = useMemo(() => {
     let result = Array.isArray(products) ? [...products] : [];
@@ -226,15 +266,15 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
     try {
       // 数据验证
       if (!editFormData.brand?.trim()) {
-        alert('请填写品牌名称');
+        alert(t('brand_required'));
         return;
       }
       if (!editFormData.model?.trim()) {
-        alert('请填写产品型号');
+        alert(t('model_required'));
         return;
       }
       if (!editFormData.channel?.trim()) {
-        alert('请填写销售渠道');
+        alert(t('channel_required'));
         return;
       }
       
@@ -264,14 +304,28 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       setIsEditingProduct(false);
     } catch (error) {
       console.error('保存失败:', error);
-      alert('保存失败，请检查数据格式');
+      alert(t('save_failed'));
     }
   };
   
-  const handleDeleteProduct = (productId: string, productName: string) => {
-    if (window.confirm(`确定要删除「${productName}」吗？此操作不可撤销。`)) {
-      onDelete(productId);
+  const handleDeleteProduct = async (productId: string, productName: string) => {
+    if (!window.confirm(t('delete_confirm_product', { name: productName }))) return;
+    try {
+      await onDelete(productId);
       handleCloseDrawer();
+    } catch {
+      // 删除失败时 diagnostic 已由父组件设置，不关闭抽屉
+    }
+  };
+  
+  const handleDeleteFromList = async (productId: string, productName: string) => {
+    setActionsOpenId(null);
+    setActionsAnchorRect(null);
+    if (!window.confirm(t('delete_confirm_product', { name: productName }))) return;
+    try {
+      await onDelete(productId);
+    } catch {
+      // 删除失败时 diagnostic 已由父组件设置
     }
   };
   
@@ -374,9 +428,9 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       {/* Header & Controls */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
         <div className="text-left space-y-2">
-           <h2 className="text-4xl font-black text-white tracking-tighter uppercase italic flex items-center gap-4">
+           <h2 className="text-4xl font-black text-white tracking-normal uppercase flex items-center gap-4">
              {t('inventory')}
-             <div className="px-3 py-1 bg-[#A3E635]/10 rounded-lg border border-[#A3E635]/20 text-[#A3E635] text-[10px] not-italic">{filteredProducts.length} SKU</div>
+             <div className="px-3 py-1 bg-[#A3E635]/10 rounded-lg border border-[#A3E635]/20 text-[#A3E635] text-[10px] not-italic tracking-wide">{filteredProducts.length} SKU</div>
            </h2>
            <p className="text-[10px] font-black text-slate-600 uppercase tracking-[0.4em]">{t('market_intel')}</p>
         </div>
@@ -439,6 +493,19 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                onClick={() => handleProductClick(p)}
                className="premium-card group relative overflow-hidden flex flex-col cursor-pointer border-white/5 p-0 hover:bg-slate-900/50 transition-all text-left"
              >
+                {/* 卡片右上角操作菜单 - 下拉通过 Portal 渲染避免 overflow 导致直角阴影 */}
+                <div className="absolute top-3 right-3 z-10" onClick={e => e.stopPropagation()}>
+                  <button 
+                    onClick={(e) => {
+                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      setActionsOpenId(actionsOpenId === p.id ? null : p.id);
+                      setActionsAnchorRect(actionsOpenId === p.id ? null : rect);
+                    }} 
+                    className="p-2 rounded-lg bg-slate-900/80 border border-white/10 text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  >
+                    <MoreHorizontal size={16} />
+                  </button>
+                </div>
                 <div className="aspect-[4/3] bg-slate-950/40 p-6 relative overflow-hidden flex items-center justify-center shrink-0">
                   <div className="w-full h-full rounded-2xl overflow-hidden bg-slate-900/80 shadow-inner flex items-center justify-center group-hover:scale-[1.02] transition-transform duration-500">
                     {p?.mainImage ? <img src={p.mainImage} className="w-full h-full object-contain p-4" alt="" /> : <Package size={40} className="text-slate-800" />}
@@ -447,17 +514,17 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                 <div className="p-6 flex-1 flex flex-col justify-between space-y-6">
                   <div>
                     <div className="flex items-center gap-2 mb-2">
-                       <span className="text-[8px] font-black text-[#818CF8] uppercase tracking-widest">{p?.brand || '未知品牌'}</span>
+                       <span className="text-[8px] font-black text-[#818CF8] uppercase tracking-widest">{p?.brand || t('unknown_brand')}</span>
                        <div className="w-1 h-1 rounded-full bg-slate-700"></div>
-                       <span className="text-[8px] font-bold text-slate-500 uppercase">{p?.channel || '未知渠道'}</span>
+                       <span className="text-[8px] font-bold text-slate-500 uppercase">{p?.channel || t('unknown_channel')}</span>
                     </div>
-                    <h4 className="text-[11px] font-black text-white uppercase tracking-tight line-clamp-2 leading-relaxed group-hover:text-[#A3E635] transition-colors">{p?.model || '未命名产品'}</h4>
+                    <h4 className="text-[11px] font-black text-white uppercase tracking-tight line-clamp-2 leading-relaxed group-hover:text-[#A3E635] transition-colors">{p?.model || t('unnamed_product')}</h4>
                   </div>
                   <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                    <p className="text-sm font-black text-white italic font-num">¥{(Number(p?.price) || 0).toLocaleString()}</p>
+                    <p className="text-sm font-black text-white font-num">¥{(Number(p?.price) || 0).toLocaleString()}</p>
                     <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#A3E635]/5 rounded-lg border border-[#A3E635]/10">
                        <Star size={10} className="text-[#A3E635]" fill="currentColor" />
-                       <span className="text-[9px] font-black text-[#A3E635] font-num">{p?.rating || '0.0'}</span>
+                       <span className="text-[9px] font-black text-[#A3E635] font-num">{(Number(p?.rating) || 0).toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
@@ -485,19 +552,48 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                                <div className="size-10 bg-slate-950 rounded-lg flex items-center justify-center p-1 border border-white/5">
                                   {p?.mainImage ? <img src={p.mainImage} className="max-w-full max-h-full object-contain" /> : <Package size={16} className="text-slate-700" />}
                                </div>
-                               <span className="text-[10px] font-black text-white uppercase truncate max-w-[200px]">{p?.model || '未命名产品'}</span>
+                               <span className="text-[10px] font-black text-white uppercase truncate max-w-[200px]">{p?.model || t('unnamed_product')}</span>
                             </div>
                          </td>
                          <td className="px-6 py-4">
                             <div className="flex flex-col gap-0.5">
-                               <span className="text-[9px] font-black text-[#818CF8] uppercase">{p?.brand || '未知品牌'}</span>
-                               <span className="text-[8px] font-bold text-slate-600 uppercase">{p?.channel || '未知渠道'}</span>
+                               <span className="text-[9px] font-black text-[#818CF8] uppercase">{p?.brand || t('unknown_brand')}</span>
+                               <span className="text-[8px] font-bold text-slate-600 uppercase">{p?.channel || t('unknown_channel')}</span>
                             </div>
                          </td>
                          <td className="px-6 py-4 font-num text-[10px] text-white font-black">¥{(Number(p?.price) || 0).toLocaleString()}</td>
                          <td className="px-6 py-4 font-num text-[10px] text-[#A3E635] font-black">{(Number(p?.monthlySales) || 0).toLocaleString()}</td>
-                         <td className="px-6 py-4 text-right">
-                            <button className="p-2 text-slate-600 hover:text-white transition-colors"><MoreHorizontal size={18} /></button>
+                         <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
+                            <div className="relative inline-block">
+                              <button 
+                                onClick={() => {
+                                  setActionsOpenId(actionsOpenId === p.id ? null : p.id);
+                                  setActionsAnchorRect(null);
+                                }} 
+                                className="p-2 text-slate-600 hover:text-white transition-colors rounded-lg hover:bg-white/5"
+                              >
+                                <MoreHorizontal size={18} />
+                              </button>
+                              {actionsOpenId === p.id && (
+                                <>
+                                  <div className="fixed inset-0 z-40" onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); }} />
+                                  <div className="absolute right-0 top-full mt-1 py-1 min-w-[140px] bg-slate-900 border border-white/10 rounded-xl shadow-xl z-50">
+                                    <button 
+                                      onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); handleProductClick(p); }} 
+                                      className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2"
+                                    >
+                                      <Eye size={14} /> {t('view_detail')}
+                                    </button>
+                                    <button 
+                                      onClick={() => handleDeleteFromList(p.id, p.model || p.brand || t('product_item'))} 
+                                      className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+                                    >
+                                      <Trash2 size={14} /> {t('delete')}
+                                    </button>
+                                  </div>
+                                </>
+                              )}
+                            </div>
                          </td>
                       </tr>
                     ))}
@@ -506,6 +602,30 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
            </div>
         </div>
       )}
+
+      {/* 网格视图操作菜单 - 通过 Portal 渲染，避免卡片 overflow-hidden 导致直角阴影 */}
+      {viewMode === 'grid' && actionsOpenId && actionsAnchorRect && (() => {
+        const p = paginatedProducts.find(pr => pr.id === actionsOpenId);
+        if (!p) return null;
+        const { bottom, right } = actionsAnchorRect;
+        return createPortal(
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); }} />
+            <div 
+              className="fixed py-1 min-w-[140px] bg-slate-900 border border-white/10 rounded-xl shadow-xl z-50"
+              style={{ top: bottom + 4, left: Math.max(8, right - 140) }}
+            >
+              <button onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); handleProductClick(p); }} className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2">
+                <Eye size={14} /> {t('view_detail')}
+              </button>
+              <button onClick={() => handleDeleteFromList(p.id, p.model || p.brand || t('product_item'))} className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-500/10 flex items-center gap-2">
+                <Trash2 size={14} /> {t('delete')}
+              </button>
+            </div>
+          </>,
+          document.body
+        );
+      })()}
 
       {/* Drawer for Add/Edit */}
       {(isAddModalOpen || editingId) && (
@@ -524,9 +644,9 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                    <div className="text-center mb-4 sm:mb-8">
                       <div className="inline-flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-1.5 sm:py-2 bg-[#A3E635]/10 border border-[#A3E635]/30 rounded-full mb-3 sm:mb-4">
                         <Package size={14} className="text-[#A3E635] sm:w-4 sm:h-4 shrink-0" />
-                        <span className="text-[10px] sm:text-[11px] font-black text-[#A3E635] uppercase tracking-widest">选择产品品类</span>
+                        <span className="text-[10px] sm:text-[11px] font-black text-[#A3E635] uppercase tracking-widest">{t('select_category')}</span>
                       </div>
-                      <p className="text-[9px] sm:text-[10px] text-slate-500 mb-4 sm:mb-6">请选择要添加的产品品类架构</p>
+                      <p className="text-[9px] sm:text-[10px] text-slate-500 mb-4 sm:mb-6">{t('select_category_hint')}</p>
                    </div>
                    <div className="grid grid-cols-1 gap-3 sm:gap-4">
                       {categories.map(cat => {
@@ -553,7 +673,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                              <div className="flex items-center gap-2">
                                 {cat?.fields && cat.fields.length > 0 && (
                                   <span className="text-[8px] text-slate-600 bg-slate-800 px-2 py-1 rounded">
-                                    {cat.fields.length} 个字段
+                                    {cat.fields.length} {t('fields_count')}
                                   </span>
                                 )}
                                 <ChevronRight className="text-slate-700" size={16} />
@@ -570,7 +690,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                         className="w-full py-3.5 sm:py-4 bg-slate-800 border border-white/10 text-slate-400 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-700 hover:text-white transition-all flex items-center justify-center gap-3"
                       >
                         <X size={14} className="sm:w-4 sm:h-4 shrink-0" />
-                        取消选择
+                        {t('cancel_select')}
                       </button>
                    </div>
                 </div>
@@ -583,8 +703,8 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                             <Package size={18} className="text-[#A3E635] sm:w-5 sm:h-5" />
                          </div>
                          <div>
-                            <h4 className="text-sm font-black text-white uppercase tracking-widest">核心信息</h4>
-                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">品牌、型号、渠道、店铺名、价格等</p>
+                            <h4 className="text-sm font-black text-white uppercase tracking-widest">{t('core_info')}</h4>
+                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">{t('core_info_hint')}</p>
                          </div>
                       </div>
                       
@@ -592,12 +712,12 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                          <div className="space-y-3">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
-                               品牌 <span className="text-red-400">*</span>
+                               {t('brand')} <span className="text-red-400">*</span>
                             </label>
                             <input 
                               type="text" 
                               className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
-                              placeholder="输入品牌名称" 
+                              placeholder={t('brand_placeholder')} 
                               value={formData.brand || ''}
                               onChange={e => setFormData({...formData, brand: e.target.value})}
                             />
@@ -605,12 +725,12 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                          
                          <div className="space-y-3">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
-                               型号 <span className="text-red-400">*</span>
+                               {t('model')} <span className="text-red-400">*</span>
                             </label>
                             <input 
                               type="text" 
                               className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
-                              placeholder="输入产品型号" 
+                              placeholder={t('model_placeholder')} 
                               value={formData.model || ''}
                               onChange={e => setFormData({...formData, model: e.target.value})}
                             />
@@ -618,7 +738,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                          
                          <div className="space-y-3">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
-                               渠道 <span className="text-red-400">*</span>
+                               {t('channel')} <span className="text-red-400">*</span>
                             </label>
                             <div className="relative group">
                                <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-[#A3E635] transition-colors" />
@@ -628,10 +748,8 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                                  className="w-full bg-slate-900 border border-white/5 rounded-xl pl-12 pr-10 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner appearance-none cursor-pointer"
                                  required
                                >
-                                  <option value="">选择渠道</option>
-                                  <option value="Amazon">Amazon</option>
-                                  <option value="Rakuten">Rakuten</option>
-                                  <option value="Yahoo Shopping">Yahoo Shopping</option>
+                                  <option value="">{t('select_channel')}</option>
+                                  {channelOptionsForForm.map(ch => <option key={ch} value={ch}>{ch}</option>)}
                                </select>
                                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" size={16} />
                             </div>
@@ -639,12 +757,12 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                          
                          <div className="space-y-3">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
-                               店铺名
+                               {t('shop_name')}
                             </label>
                             <input 
                               type="text" 
                               className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
-                              placeholder="输入店铺名称" 
+                              placeholder={t('shop_name_placeholder')} 
                               value={formData.shopName || ''}
                               onChange={e => setFormData({...formData, shopName: e.target.value})}
                             />
@@ -652,7 +770,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                          
                          <div className="space-y-3">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
-                               价格 (¥)
+                               {t('price_label')}
                             </label>
                             <div className="relative">
                                <input 
@@ -669,7 +787,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                          
                          <div className="space-y-3">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
-                               月销量
+                               {t('monthly_sales')}
                             </label>
                             <div className="relative">
                                <input 
@@ -679,23 +797,23 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                                  value={formData.monthlySales || ''}
                                  onChange={e => setFormData({...formData, monthlySales: e.target.value === '' ? '' : parseInt(e.target.value)})}
                                />
-                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-black">件/月</span>
+                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-black">{t('units_per_month')}</span>
                             </div>
                          </div>
                          
                          <div className="space-y-3">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
-                               评分 (0-5)
+                               {t('rating_label')}
                             </label>
                             <div className="relative">
                                <input 
                                  type="number" 
                                  min="0" 
                                  max="5" 
-                                 step="0.1"
+                                 step="0.01"
                                  className="w-full bg-slate-900 border border-white/5 rounded-xl pl-4 pr-16 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
-                                 placeholder="0.0" 
-                                 value={formData.rating || ''}
+                                 placeholder="4.75" 
+                                 value={formData.rating ?? ''}
                                  onChange={e => setFormData({...formData, rating: e.target.value === '' ? '' : parseFloat(e.target.value)})}
                                />
                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-black">★</span>
@@ -704,7 +822,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                          
                          <div className="space-y-3 md:col-span-2">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
-                               产品链接
+                               {t('link_url')}
                             </label>
                             <div className="relative group">
                                <ExternalLink className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-[#A3E635] transition-colors" />
@@ -720,12 +838,12 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                          
                          <div className="space-y-3 md:col-span-2">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
-                               主图
+                               {t('main_image')}
                             </label>
                             <ImageInput 
                               value={formData.mainImage || ''} 
                               onChange={(val) => setFormData({...formData, mainImage: val})} 
-                              placeholder="上传产品主图" 
+                              placeholder={t('main_image_placeholder')} 
                             />
                          </div>
                       </div>
@@ -739,8 +857,8 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                                <Settings size={20} className="text-indigo-400" />
                             </div>
                             <div>
-                               <h4 className="text-sm font-black text-white uppercase tracking-widest">品类参数</h4>
-                               <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">{activeCategory.name} 特有属性 · 渠道/店铺名见上方核心信息</p>
+                               <h4 className="text-sm font-black text-white uppercase tracking-widest">{t('category_params')}</h4>
+                               <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">{activeCategory.name} · {t('core_info_hint')}</p>
                             </div>
                          </div>
                          
@@ -813,7 +931,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                        <div className="grid grid-cols-2 gap-4 sm:gap-8 border-b border-white/5 pb-6 sm:pb-10">
                           <div>
                              <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('price')}</p>
-                             <p className="text-2xl sm:text-4xl font-black text-white italic font-num">¥{(Number(detailedProduct?.price) || 0).toLocaleString()}</p>
+                             <p className="text-2xl sm:text-4xl font-black text-white font-num">¥{(Number(detailedProduct?.price) || 0).toLocaleString()}</p>
                           </div>
                           <div>
                              <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('volume')}</p>
@@ -846,16 +964,16 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
         <div className="flex items-center justify-between mt-8 pt-6 border-t border-white/5">
           <div className="flex items-center gap-4">
             <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
-              显示 {((currentPage - 1) * itemsPerPage) + 1}-{Math.min(currentPage * itemsPerPage, filteredProducts.length)} / {filteredProducts.length} 条
+              {t('pagination_show', { start: ((currentPage - 1) * itemsPerPage) + 1, end: Math.min(currentPage * itemsPerPage, filteredProducts.length), total: filteredProducts.length })}
             </span>
             <select 
               value={itemsPerPage} 
               onChange={(e) => setItemsPerPage(Number(e.target.value))}
               className="bg-slate-900 border border-white/5 rounded-lg px-3 py-2 text-[10px] font-black uppercase text-white outline-none"
             >
-              <option value={10}>10 条/页</option>
-              <option value={20}>20 条/页</option>
-              <option value={50}>50 条/页</option>
+              <option value={10}>10 {t('per_page')}</option>
+              <option value={20}>20 {t('per_page')}</option>
+              <option value={50}>50 {t('per_page')}</option>
             </select>
           </div>
           
@@ -923,11 +1041,11 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
             <div className="sticky top-0 bg-slate-950/95 backdrop-blur-md border-b border-white/10 p-6 z-10 pt-20 mt-16">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-black text-white uppercase tracking-tight">
+                  <h2 className="type-page-title uppercase tracking-normal">
                     {selectedProduct.brand} {selectedProduct.model}
                   </h2>
-                  <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-1">
-                    竞品情报详情
+                  <p className="type-section-subtitle mt-1">
+                    {t('product_detail_title')}
                   </p>
                 </div>
                 <button 
@@ -945,58 +1063,44 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                 {/* Product Image */}
                 <div className="aspect-[4/3] bg-slate-950/40 rounded-3xl p-8 relative overflow-hidden flex items-center justify-center">
                   <div className="w-full h-full rounded-2xl overflow-hidden bg-slate-900/80 shadow-inner flex items-center justify-center">
-                    {selectedProduct?.attributes?.mainImage ? (
-                      <img src={selectedProduct.attributes.mainImage} className="w-full h-full object-contain p-4" alt="" />
+                    {(selectedProduct?.mainImage || selectedProduct?.attributes?.mainImage) ? (
+                      <img src={selectedProduct.mainImage || selectedProduct.attributes?.mainImage} className="w-full h-full object-contain p-4" alt="" />
                     ) : (
                       <Package size={80} className="text-slate-800" />
                     )}
                   </div>
                 </div>
                 
-                {/* 产品基础信息展示 */}
+                {/* 产品基础信息展示 - 遵循 typography 规范 */}
                 <div className="premium-card p-8 border-white/10">
                   <div className="flex items-center gap-4 mb-6">
                     <div className="size-10 bg-slate-600 rounded-xl flex items-center justify-center text-white">
                       <Package size={20} />
                     </div>
                     <div>
-                      <h4 className="text-[12px] font-black uppercase tracking-widest text-white">产品基础信息</h4>
-                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1 italic">Basic Product Information</p>
+                      <h4 className="type-section-title">{t('basic_product_info')}</h4>
+                      <p className="type-section-subtitle mt-1">{t('basic_product_info')}</p>
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-3">
                       <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">产品ID</span>
-                        <span className="text-[10px] font-black text-white">{selectedProduct.id}</span>
+                        <span className="type-label">{t('category_name')}</span>
+                        <span className="type-value">{categories.find(c => c.id === selectedProduct.categoryId)?.name || selectedProduct.categoryId || t('not_set')}</span>
                       </div>
                       <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">品类ID</span>
-                        <span className="text-[10px] font-black text-white">{selectedProduct.categoryId || '未设置'}</span>
-                      </div>
-                      <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">创建时间</span>
-                        <span className="text-[10px] font-black text-white">
-                          {selectedProduct.createdAt ? new Date(selectedProduct.createdAt).toLocaleDateString() : '未知'}
-                        </span>
+                        <span className="type-label">{t('created_at')}</span>
+                        <span className="type-value">{selectedProduct.createdAt ? new Date(selectedProduct.createdAt).toLocaleDateString() : t('unknown')}</span>
                       </div>
                     </div>
                     <div className="space-y-3">
                       <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">更新时间</span>
-                        <span className="text-[10px] font-black text-white">
-                          {selectedProduct.updatedAt ? new Date(selectedProduct.updatedAt).toLocaleDateString() : '未知'}
-                        </span>
+                        <span className="type-label">{t('updated_at')}</span>
+                        <span className="type-value">{selectedProduct.updatedAt ? new Date(selectedProduct.updatedAt).toLocaleDateString() : t('unknown')}</span>
                       </div>
                       <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">更新者</span>
-                        <span className="text-[10px] font-black text-white">{selectedProduct.updatedBy || '未知'}</span>
-                      </div>
-                      <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">主图</span>
-                        <span className="text-[10px] font-black text-white truncate max-w-[150px]">
-                          {selectedProduct?.attributes?.main_image ? '已设置' : '未设置'}
-                        </span>
+                        <span className="type-label">主图</span>
+                        <span className="type-value truncate max-w-[150px]">{(selectedProduct?.mainImage || selectedProduct?.attributes?.mainImage || selectedProduct?.attributes?.main_image) ? t('set') : t('not_set')}</span>
                       </div>
                     </div>
                   </div>
@@ -1005,217 +1109,107 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                   <div className="premium-card p-6 border-white/10">
                     <div className="flex items-center gap-3 mb-4">
                       <Globe size={16} className="text-slate-500" />
-                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">渠道</span>
+                      <span className="type-label">{t('channel')}</span>
                     </div>
-                    <p className="text-lg font-black text-white">{selectedProduct.channel || '未知'}</p>
+                    <p className="type-value-emphasis">{selectedProduct.channel || t('unknown')}</p>
                   </div>
-                  
                   <div className="premium-card p-6 border-white/10">
                     <div className="flex items-center gap-3 mb-4">
                       <Star size={16} className="text-yellow-500" />
-                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">评分</span>
+                      <span className="type-label">{t('rating')}</span>
                     </div>
-                    <p className="text-lg font-black text-white">{selectedProduct.rating || '0.0'}</p>
+                    <p className="type-value-emphasis">{(Number(selectedProduct?.rating) || 0).toFixed(2)}</p>
                   </div>
-                  
                   <div className="premium-card p-6 border-white/10">
                     <div className="flex items-center gap-3 mb-4">
                       <Zap size={16} className="text-green-500" />
-                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">价格</span>
+                      <span className="type-label">{t('price')}</span>
                     </div>
-                    <p className="text-lg font-black text-white">¥{(Number(selectedProduct.price) || 0).toLocaleString()}</p>
+                    <p className="type-value-emphasis">¥{(Number(selectedProduct.price) || 0).toLocaleString()}</p>
                   </div>
-                  
                   <div className="premium-card p-6 border-white/10">
                     <div className="flex items-center gap-3 mb-4">
                       <Package size={16} className="text-blue-500" />
-                      <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">月销量</span>
+                      <span className="type-label">月销量</span>
                     </div>
-                    <p className="text-lg font-black text-white">{(Number(selectedProduct.monthlySales) || 0).toLocaleString()}</p>
+                    <p className="type-value-emphasis">{(Number(selectedProduct.monthlySales) || 0).toLocaleString()}</p>
                   </div>
                 </div>
                 
-                {/* 参数卡片 - 硬核参数 */}
-                {(selectedProduct?.attributes?.capacity_mah || selectedProduct?.attributes?.weight_g || selectedProduct?.attributes?.interfaces) && (
-                  <div className="premium-card p-8 border-cyan-500/30 bg-cyan-950/20">
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className="size-10 bg-cyan-600 rounded-xl flex items-center justify-center text-white">
-                        <Package size={20} />
+                {/* 品类自定义字段 - 按后台配置顺序展示，使用用户创建字段名称 */}
+                {(() => {
+                  const FIXED_IDS = ['brand', 'model', 'linkUrl', 'channel', 'shopName', 'price', 'monthlySales', 'rating', 'mainImage', 'link_url', 'main_image'];
+                  const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
+                  const customFields = (activeCat?.fields ?? []).filter(f => f?.id && f?.name && !FIXED_IDS.includes(f.id));
+                  if (customFields.length === 0) return null;
+                  const getVal = (f: ProductField) => selectedProduct?.[f.id] ?? selectedProduct?.attributes?.[f.id];
+                  const formatVal = (v: unknown, isMultiQty?: boolean): React.ReactNode => {
+                    if (v === undefined || v === null || v === '') return null;
+                    if (Array.isArray(v)) return v.join(', ');
+                    if (typeof v === 'object' && v !== null) {
+                      const entries = Object.entries(v).filter(([, n]) => n != null && n !== '');
+                      if (isMultiQty && entries.length > 0) return entries.map(([k, n]) => `${k}×${n}`).join(' · ');
+                      return JSON.stringify(v, null, 2);
+                    }
+                    return String(v);
+                  };
+                  return (
+                    <div className="premium-card p-8 border-white/10">
+                      <div className="flex items-center gap-4 mb-6">
+                        <div className="size-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
+                          <Database size={20} />
+                        </div>
+                        <div>
+                          <h4 className="type-section-title">{t('category_params')}</h4>
+                          <p className="type-section-subtitle mt-1 text-indigo-400">{activeCat?.name} · {t('category_params_hint')}</p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">硬核参数</h4>
-                        <p className="text-[8px] font-black text-cyan-400 uppercase tracking-widest mt-1 italic">Technical Specifications</p>
+                      <div className="space-y-4">
+                        {customFields.map((field) => {
+                          const val = getVal(field);
+                          const isPros = /好评|pros/i.test(field.name) || field.id === 'pros';
+                          const isCons = /差评|cons/i.test(field.name) || field.id === 'cons';
+                          if (isPros || isCons) {
+                            return (
+                              <div key={field.id} className={`p-4 rounded-2xl border ${isPros ? 'bg-green-500/10 border-green-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
+                                <div className="flex items-center gap-2 mb-2">
+                                  {isPros ? <ThumbsUp size={14} className="text-green-400" /> : <ThumbsDown size={14} className="text-red-400" />}
+                                  <span className={`type-label ${isPros ? 'text-green-400' : 'text-red-400'}`}>{field.name}</span>
+                                </div>
+                                <p className={`type-value leading-relaxed ${isPros ? 'text-green-300' : 'text-red-300'}`}>
+                                  {val ? formatVal(val) : <span className="opacity-50 italic">{t('no_data_caption')}</span>}
+                                </p>
+                              </div>
+                            );
+                          }
+                          const isMultiQty = field.type === FieldType.MULTI_SELECT_QUANTITY;
+                          return (
+                            <div key={field.id} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-900/50 rounded-xl border border-white/5">
+                              <div className="md:col-span-1">
+                                <span className="type-label">{field.name}</span>
+                              </div>
+                              <div className="md:col-span-2">
+                                {val ? (typeof val === 'object' && !Array.isArray(val) ? (isMultiQty ? <p className="type-value text-slate-300">{formatVal(val, true)}</p> : <pre className="text-xs font-mono text-slate-300 whitespace-pre-wrap">{formatVal(val)}</pre>) : <p className="type-value text-slate-300">{String(val)}</p>) : <span className="type-caption italic">—</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      {selectedProduct?.attributes?.capacity_mah && (
-                        <div className="text-center">
-                          <div className="text-2xl font-black text-cyan-400">{selectedProduct.attributes.capacity_mah}</div>
-                          <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1">mAh 容量</div>
-                        </div>
-                      )}
-                      {selectedProduct?.attributes?.weight_g && (
-                        <div className="text-center">
-                          <div className="text-2xl font-black text-cyan-400">{selectedProduct.attributes.weight_g}</div>
-                          <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1">克 重量</div>
-                        </div>
-                      )}
-                      {selectedProduct?.attributes?.interfaces && (
-                        <div className="text-center">
-                          <div className="text-lg font-black text-cyan-400">{selectedProduct.attributes.interfaces}</div>
-                          <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-1">接口规格</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
                 
-                {/* Marketing Messages - 卖点 */}
-                {selectedProduct?.attributes?.selling_points && Array.isArray(selectedProduct.attributes.selling_points) && selectedProduct.attributes.selling_points.length > 0 && (
-                  <div className="premium-card p-8 border-blue-500/30 bg-blue-950/20">
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className="size-10 bg-blue-600 rounded-xl flex items-center justify-center text-white">
-                        <Star size={20} />
-                      </div>
-                      <div>
-                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">Marketing Messages</h4>
-                        <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest mt-1 italic">卖点亮点</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-3">
-                      {selectedProduct.attributes.selling_points.map((point: string, index: number) => (
-                        <div key={index} className="px-4 py-2 bg-blue-500/20 border border-blue-500/30 text-blue-300 text-[10px] font-black uppercase tracking-widest rounded-full flex items-center gap-2">
-                          <Zap size={12} className="text-blue-400" />
-                          {point}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Voice of Customer - 口碑对比 */}
-                <div className="premium-card p-8 border-white/10">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="size-10 bg-gradient-to-r from-green-500 to-red-500 rounded-xl flex items-center justify-center text-white">
-                      <ThumbsUp size={20} />
-                    </div>
-                    <div>
-                      <h4 className="text-[12px] font-black uppercase tracking-widest text-white">Voice of Customer</h4>
-                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1 italic">口碑对比分析</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* 好评 */}
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="size-8 bg-green-500/20 rounded-lg flex items-center justify-center">
-                          <ThumbsUp size={16} className="text-green-400" />
-                        </div>
-                        <h5 className="text-[10px] font-black text-green-400 uppercase tracking-widest">好评 Pros</h5>
-                      </div>
-                      <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-2xl">
-                        <p className="text-[11px] font-medium text-green-300 leading-relaxed">
-                          {selectedProduct?.attributes?.pros || (
-                            <span className="text-green-400/50 italic">暂无好评数据</span>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    {/* 差评 */}
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-3">
-                        <div className="size-8 bg-red-500/20 rounded-lg flex items-center justify-center">
-                          <ThumbsDown size={16} className="text-red-400" />
-                        </div>
-                        <h5 className="text-[10px] font-black text-red-400 uppercase tracking-widest">差评 Cons</h5>
-                      </div>
-                      <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl">
-                        <p className="text-[11px] font-bold text-red-300 leading-relaxed">
-                          {selectedProduct?.attributes?.cons ? (
-                            <>
-                              {selectedProduct.attributes.cons.includes('99%') ? (
-                                <><span className="text-red-200 font-black text-lg">「{selectedProduct.attributes.cons}」</span><br/><span className="text-red-400 text-[9px] mt-2 block">⚠️ 典型痛点案例</span></>
-                              ) : (
-                                selectedProduct.attributes.cons
-                              )}
-                            </>
-                          ) : (
-                            <span className="text-red-400/50 italic">暂无差评数据</span>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                {/* 关键痛点 - 特别突出 */}
-                {selectedProduct?.attributes?.raw_review && (
-                  <div className="premium-card p-8 border-red-500/50 bg-red-950/30 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4 opacity-20">
-                      <AlertTriangle size={80} className="text-red-400" />
-                    </div>
-                    <div className="flex items-start gap-4 mb-6">
-                      <div className="size-10 bg-red-600 rounded-xl flex items-center justify-center text-white flex-shrink-0 mt-1">
-                        <AlertTriangle size={20} />
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="text-[12px] font-black uppercase tracking-widest text-red-400">⚠️ 关键痛点</h4>
-                        <p className="text-[8px] font-black text-red-600 uppercase tracking-widest mt-1 italic">Critical Customer Pain Point</p>
-                      </div>
-                    </div>
-                    <div className="p-6 bg-red-500/10 border-2 border-red-500/30 rounded-2xl">
-                      <p className="text-[13px] font-black text-red-200 leading-relaxed">
-                        "{selectedProduct.attributes.raw_review}"
-                      </p>
-                      {selectedProduct.attributes.raw_review.includes('99%') && (
-                        <div className="mt-3 text-red-400 text-[9px] font-black uppercase tracking-widest">
-                          ⚠️ 高频痛点 - 需重点关注
-                        </div>
-                      )}
-                      {selectedProduct.attributes.raw_review.includes('点滅') && (
-                        <div className="mt-3 text-red-400 text-[9px] font-black uppercase tracking-widest">
-                          ⚠️ 闪烁问题 - 关键缺陷
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-                
-                {/* 贾维斯洞察 */}
-                {selectedProduct?.attributes?.insight_summary && (
-                  <div className="premium-card p-10 border-purple-500/30 bg-purple-950/20 relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                      <Brain size={100} className="text-purple-400" />
-                    </div>
-                    <div className="flex items-center gap-4 mb-8">
-                      <div className="size-10 bg-purple-600 rounded-xl flex items-center justify-center text-white">
-                        <Brain size={20} />
-                      </div>
-                      <div>
-                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">贾维斯洞察</h4>
-                        <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest mt-1 italic">Market Opportunity Analysis</p>
-                      </div>
-                    </div>
-                    <div className="prose prose-invert max-w-none">
-                      <div className="text-purple-300 text-sm leading-relaxed whitespace-pre-wrap italic font-medium">
-                        {selectedProduct.attributes.insight_summary}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* 外部链接 - 醒目按钮 */}
-                {selectedProduct?.attributes?.link_url && (
+                {/* 产品链接 - 固定字段 */}
+                {(selectedProduct?.linkUrl || selectedProduct?.attributes?.link_url) && (
                   <div className="premium-card p-6 border-white/10">
                     <a
-                      href={selectedProduct.attributes.link_url}
+                      href={String(selectedProduct?.linkUrl || selectedProduct?.attributes?.link_url)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="w-full bg-gradient-to-r from-blue-600 to-purple-600 border border-blue-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:from-blue-700 hover:to-purple-700 transition-all flex items-center justify-center gap-3"
                     >
                       <ExternalLink size={18} />
-                      前往源链接
+                      {t('visit_source_link')}
                     </a>
                   </div>
                 )}
@@ -1228,7 +1222,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                     className="w-full bg-indigo-600 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-indigo-500 transition-all shadow-xl active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
                   >
                     {isAiAnalyzing ? <RefreshCw className="animate-spin" size={18} /> : <Sparkles size={18} />} 
-                    {isAiAnalyzing ? 'AI 分析中...' : 'AI 单品深度分析'}
+                    {isAiAnalyzing ? t('ai_analyzing') : t('ai_deep_analysis')}
                   </button>
                 </div>
                 
@@ -1243,12 +1237,12 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                         <Sparkles size={20} />
                       </div>
                       <div>
-                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">AI 单品深度分析</h4>
-                        <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mt-1 italic">Generated via Gemini Node</p>
+                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('ai_deep_analysis')}</h4>
+                        <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mt-1">Generated via Gemini Node</p>
                       </div>
                     </div>
                     <div className="prose prose-invert max-w-none">
-                      <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap italic font-medium">
+                      <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-medium">
                         {aiAnalysis}
                       </div>
                     </div>
@@ -1263,7 +1257,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                     className="w-full bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:from-orange-700 hover:to-red-700 transition-all shadow-xl active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
                   >
                     {isCompetitorAnalyzing ? <RefreshCw className="animate-spin" size={18} /> : <Brain size={18} />} 
-                    {isCompetitorAnalyzing ? 'AI 分析中...' : 'AI 竞品对策'}
+                    {isCompetitorAnalyzing ? t('ai_analyzing') : t('ai_competitor_strategy')}
                   </button>
                 </div>
                 
@@ -1278,59 +1272,18 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                         <Brain size={20} />
                       </div>
                       <div>
-                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">AI 竞品对策</h4>
-                        <p className="text-[8px] font-black text-orange-400 uppercase tracking-widest mt-1 italic">Competitor Counter Strategy</p>
+                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('ai_competitor_strategy')}</h4>
+                        <p className="text-[8px] font-black text-orange-400 uppercase tracking-widest mt-1">Competitor Counter Strategy</p>
                       </div>
                     </div>
                     <div className="prose prose-invert max-w-none">
-                      <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap italic font-medium">
+                      <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-medium">
                         {competitorAnalysis}
                       </div>
                     </div>
                   </div>
                 )}
                 
-                {/* 完整字段展示 - 所有 attributes数据 */}
-                {selectedProduct?.attributes && Object.keys(selectedProduct.attributes).length > 0 && (
-                  <div className="premium-card p-8 border-white/10">
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className="size-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
-                        <Database size={20} />
-                      </div>
-                      <div>
-                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">完整数据档案</h4>
-                        <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mt-1 italic">Complete Data Profile</p>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      {Object.entries(selectedProduct.attributes).map(([key, value]) => {
-                        // 跳过已经在上面展示的字段
-                        if (['main_image', 'link_url', 'selling_points', 'pros', 'cons', 'raw_review', 'insight_summary', 'capacity_mah', 'weight_g', 'interfaces'].includes(key)) {
-                          return null;
-                        }
-                        
-                        return (
-                          <div key={key} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-900/50 rounded-xl border border-white/5">
-                            <div className="md:col-span-1">
-                              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{key}</span>
-                            </div>
-                            <div className="md:col-span-2">
-                              {typeof value === 'object' ? (
-                                <pre className="text-[10px] text-slate-300 font-mono whitespace-pre-wrap">
-                                  {JSON.stringify(value, null, 2)}
-                                </pre>
-                              ) : (
-                                <p className="text-[11px] text-slate-300 font-medium">
-                                  {String(value)}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
                 {isEditingProduct && (
                   <div id="product-edit-section" className="premium-card p-8 border-white/10">
                     <div className="flex items-center gap-4 mb-8">
@@ -1338,14 +1291,14 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                         <Edit2 size={20} />
                       </div>
                       <div>
-                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">编辑产品信息</h4>
-                        <p className="text-[8px] font-black text-orange-400 uppercase tracking-widest mt-1 italic">Edit Product Information</p>
+                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('edit_product_info')}</h4>
+                        <p className="text-[8px] font-black text-orange-400 uppercase tracking-widest mt-1">Edit Product Information</p>
                       </div>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">品牌</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('brand')}</label>
                         <input 
                           type="text" 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
@@ -1355,7 +1308,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">型号</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('model')}</label>
                         <input 
                           type="text" 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
@@ -1365,21 +1318,19 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">渠道</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('channel')}</label>
                         <select 
                           value={editFormData.channel || ''}
                           onChange={e => setEditFormData({...editFormData, channel: e.target.value})}
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner appearance-none cursor-pointer"
                         >
-                          <option value="">选择渠道</option>
-                          <option value="Amazon">Amazon</option>
-                          <option value="Rakuten">Rakuten</option>
-                          <option value="Yahoo Shopping">Yahoo Shopping</option>
+                          <option value="">{t('select_channel')}</option>
+                          {channelOptionsForForm.map(ch => <option key={ch} value={ch}>{ch}</option>)}
                         </select>
                       </div>
                       
                       <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">店铺名</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('shop_name')}</label>
                         <input 
                           type="text" 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
@@ -1389,7 +1340,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">价格</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('price')}</label>
                         <input 
                           type="number" 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
@@ -1399,7 +1350,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">评分</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('rating')}</label>
                         <input 
                           type="number" 
                           step="0.01"
@@ -1410,7 +1361,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">月销量</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('monthly_sales')}</label>
                         <input 
                           type="number" 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
@@ -1420,7 +1371,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">产品链接</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('link_url')}</label>
                         <input 
                           type="url" 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
@@ -1430,7 +1381,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">主图链接</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('main_image_url')}</label>
                         <input 
                           type="url" 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
@@ -1440,7 +1391,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">卖点（用逗号分隔）</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('sell_points')}</label>
                         <input 
                           type="text" 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
@@ -1450,7 +1401,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">好评</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pros')}</label>
                         <textarea 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
                           rows={3}
@@ -1460,7 +1411,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">差评</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('cons')}</label>
                         <textarea 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
                           rows={3}
@@ -1470,7 +1421,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">关键痛点</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pain_point')}</label>
                         <textarea 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
                           rows={2}
@@ -1480,7 +1431,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">市场洞察</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('insight_summary')}</label>
                         <textarea 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
                           rows={4}
@@ -1500,7 +1451,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       className="flex-1 bg-slate-900 border border-white/10 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
                     >
                       <Edit2 size={18} />
-                      修改
+                      {t('modify')}
                     </button>
                   )}
                   
@@ -1510,7 +1461,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       className="flex-1 bg-red-600 border border-red-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3"
                     >
                       <Trash2 size={18} />
-                      删除
+                      {t('delete')}
                     </button>
                   )}
                   
@@ -1519,7 +1470,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                     className="flex-1 bg-slate-900 border border-white/10 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
                   >
                     <X size={18} />
-                    关闭
+                    {t('close')}
                   </button>
                 </div>
                 
@@ -1531,7 +1482,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       className="bg-green-600 border border-green-500/30 text-white px-12 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-green-700 transition-all flex items-center justify-center gap-3"
                     >
                       <Check size={18} />
-                      保存修改
+                      {t('save_changes')}
                     </button>
                   </div>
                 )}

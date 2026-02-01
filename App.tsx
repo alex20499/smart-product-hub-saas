@@ -55,13 +55,19 @@ const App: React.FC = () => {
   });
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const t = (key: string) => {
+  const t = (key: string, replacements?: Record<string, string | number>) => {
     const lang = TRANSLATIONS[state.language];
+    let s: string;
     if (key.includes('.')) {
       const parts = key.split('.');
-      return lang[parts[0]]?.[parts[1]] || key;
+      s = lang[parts[0]]?.[parts[1]] || key;
+    } else {
+      s = lang[key] ?? key;
     }
-    return lang[key] || key;
+    if (replacements) {
+      Object.entries(replacements).forEach(([k, v]) => { s = s.replace(`{${k}}`, String(v)); });
+    }
+    return s;
   };
 
   const fetchFromCloud = useCallback(async (silent = false) => {
@@ -124,24 +130,27 @@ const App: React.FC = () => {
       // 转换产品数据，合并固定字段和 attributes
       const productsWithAttributes = cloudProds.map((p: any) => {
         const attributes = p.attributes || {};
+        const createdMs = p.created_at ? new Date(p.created_at).getTime() : 0;
+        const updatedMs = p.updated_at ? new Date(p.updated_at).getTime() : undefined;
+        // 先展开 attributes，再用 DB 固定列覆盖，确保云端数据优先
         return {
+          ...attributes,
           id: p.id,
           categoryId: p.category_id,
-          createdAt: Number(p.created_at || 0),
-          updatedAt: p.updated_at ? Number(p.updated_at) : undefined,
+          createdAt: createdMs,
+          updatedAt: updatedMs,
           updatedBy: p.updated_by,
-          // 固定字段
           brand: p.brand || '',
           model: p.model || '',
           price: Number(p.price || 0),
           monthlySales: Number(p.monthly_sales || 0),
           rating: Number(p.rating || 0),
           mainImage: p.main_image || '',
+          linkUrl: p.link_url || '',
           channel: p.channel || '',
           shopName: p.shop_name || '',
           actualPrice: p.actual_price ? Number(p.actual_price) : undefined,
-          // 从 attributes 展开的动态字段
-          ...attributes
+          attributes
         };
       });
 
@@ -169,7 +178,7 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
       const { categoryId, ...restData } = data;
-      const now = Date.now();
+      const now = new Date().toISOString();
       
       // 分离核心固定字段和动态字段
       const fixedFields = {
@@ -184,10 +193,10 @@ const App: React.FC = () => {
         monthly_sales: Number(restData.monthlySales || 0),
         rating: Number(restData.rating || 0),
         main_image: restData.mainImage || '',
-        // 时间戳
+        // 时间戳 - PostgreSQL 需要 ISO 8601 字符串，不能是毫秒数
         created_at: now,
         updated_at: now,
-        updated_by: state.currentUser?.username
+        updated_by: (state.currentUser?.id && /^[0-9a-f-]{36}$/i.test(state.currentUser.id)) ? state.currentUser.id : null
       };
       
       // 动态字段放入 attributes (品类特定参数)
@@ -224,7 +233,7 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
       const { categoryId, ...restData } = data;
-      const now = Date.now();
+      const now = new Date().toISOString();
       
       // 分离核心固定字段和动态字段
       const fixedFields = {
@@ -239,9 +248,9 @@ const App: React.FC = () => {
         monthly_sales: Number(restData.monthlySales || 0),
         rating: Number(restData.rating || 0),
         main_image: restData.mainImage || '',
-        // 时间戳
+        // 时间戳 - PostgreSQL 需要 ISO 8601 字符串
         updated_at: now,
-        updated_by: state.currentUser?.username
+        updated_by: (state.currentUser?.id && /^[0-9a-f-]{36}$/i.test(state.currentUser.id)) ? state.currentUser.id : null
       };
       
       // 动态字段放入 attributes (品类特定参数)
@@ -276,9 +285,16 @@ const App: React.FC = () => {
 
   const handleProductDelete = async (id: string) => {
     setIsSyncing(true);
-    const { error } = await supabase.from('products').delete().eq('id', id);
-    if (error) setDiagnostic({ msg: error.message, code: error.code });
-    await fetchFromCloud(true);
+    try {
+      const { error } = await supabase.from('products').delete().eq('id', id);
+      if (error) {
+        setDiagnostic({ msg: error.message, code: error.code });
+        throw new Error(error.message);
+      }
+      await fetchFromCloud(true);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleUpdateCategories = async (newCategories: Category[]) => {
@@ -404,6 +420,10 @@ const App: React.FC = () => {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
 
+  useEffect(() => {
+    document.documentElement.lang = state.language;
+  }, [state.language]);
+
   if (!state.currentUser) return <Login onLogin={login} language={state.language} t={t} />;
 
   return (
@@ -415,8 +435,8 @@ const App: React.FC = () => {
     >
       <div className="h-full relative">
         {diagnostic && (
-          <div className="fixed inset-x-0 top-0 z-[1000] p-3 sm:p-4 lg:p-8 animate-in slide-in-from-top duration-700 overflow-y-auto max-h-[100dvh]">
-             <div className="max-w-4xl mx-auto bg-slate-900 border border-red-500/30 rounded-2xl sm:rounded-[3rem] shadow-2xl overflow-hidden p-4 sm:p-6 lg:p-12 space-y-4 sm:space-y-6">
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 sm:p-6 overflow-y-auto max-h-[100dvh] bg-black/60">
+             <div className="w-full max-w-lg bg-slate-900 border border-red-500/30 rounded-2xl shadow-2xl overflow-hidden p-4 sm:p-6 space-y-4 sm:space-y-6 animate-in zoom-in-95 duration-200">
                 <div className="flex items-center gap-3 sm:gap-5 text-red-500">
                    <ShieldAlert size={22} className="sm:w-7 sm:h-7 shrink-0" />
                    <h3 className="text-base sm:text-xl font-black uppercase text-white truncate">System Protocol Diagnostic</h3>

@@ -129,7 +129,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
         <div className="flex items-center gap-4 sm:gap-6 text-left w-full">
           <div className="bg-[#818CF8]/20 p-3 sm:p-5 rounded-xl sm:rounded-[2rem] text-[#818CF8] border border-[#818CF8]/20 shrink-0"><Database className="w-6 h-6 sm:w-8 sm:h-8" /></div>
           <div>
-            <h1 className="text-xl sm:text-3xl font-black text-white tracking-tighter uppercase leading-tight">{t('settings')}</h1>
+            <h1 className="text-xl sm:text-3xl font-black text-white tracking-normal uppercase leading-tight">{t('settings')}</h1>
             <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] sm:tracking-[0.4em] mt-1">Research Matrix Architect</p>
           </div>
         </div>
@@ -171,7 +171,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
           <div className="flex items-center gap-4 sm:gap-6">
             <button onClick={() => setSelectedCategoryId(null)} className="w-12 h-12 sm:w-14 sm:h-14 bg-slate-800 text-slate-400 hover:text-white rounded-xl sm:rounded-2xl border border-white/5 flex items-center justify-center transition-all active:scale-90 shadow-xl shrink-0"><ChevronLeft size={24} className="sm:w-7 sm:h-7" /></button>
             <div className="text-left min-w-0">
-              <h2 className="text-xl sm:text-3xl font-black text-white uppercase tracking-tighter truncate">{selectedCategory?.name}</h2>
+              <h2 className="text-xl sm:text-3xl font-black text-white uppercase tracking-normal truncate">{selectedCategory?.name}</h2>
               <p className="text-[9px] sm:text-[10px] font-black text-[#A3E635] uppercase tracking-[0.3em] sm:tracking-[0.4em] mt-1">{t('node_definition_mode')}</p>
             </div>
           </div>

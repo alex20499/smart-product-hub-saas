@@ -2,6 +2,16 @@
    全局UI布局安全距离和样式修复
    ======================================== */
 
+/* 字体层级规范 - 详见 docs/TYPOGRAPHY.md */
+.type-page-title { font-size: 1.25rem; font-weight: 700; color: white; letter-spacing: 0.02em; }
+@media (min-width: 640px) { .type-page-title { font-size: 1.5rem; } }
+.type-section-title { font-size: 0.875rem; font-weight: 600; color: white; text-transform: uppercase; letter-spacing: 0.06em; }
+.type-section-subtitle { font-size: 0.625rem; font-weight: 500; color: rgb(100 116 139); text-transform: uppercase; letter-spacing: 0.06em; }
+.type-label { font-size: 0.75rem; font-weight: 600; color: rgb(100 116 139); text-transform: uppercase; letter-spacing: 0.04em; }
+.type-value { font-size: 0.875rem; font-weight: 500; color: white; }
+.type-value-emphasis { font-size: 1rem; font-weight: 600; color: white; }
+.type-caption { font-size: 0.625rem; font-weight: 500; color: rgb(148 163 184); }
+
 /* 自定义滚动条样式 */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;

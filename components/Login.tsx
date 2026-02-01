@@ -65,8 +65,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
           <div className="bg-[#A3E635] p-2.5 sm:p-4 rounded-xl sm:rounded-3xl shadow-[0_0_40px_rgba(163,230,53,0.3)] mb-3 sm:mb-5">
             <Zap className={`w-5 h-5 sm:w-7 sm:h-7 text-slate-950 ${isConnecting ? 'animate-pulse' : ''}`} />
           </div>
-          <h1 className="text-xl sm:text-4xl font-black text-white tracking-tighter uppercase leading-none">{APP_NAME}</h1>
-          <p className="text-[6px] sm:text-[8px] font-black text-slate-600 uppercase tracking-[0.3em] sm:tracking-[0.4em] mt-1 sm:mt-2 italic">Autonomous Protocol Access</p>
+          <h1 className="text-xl sm:text-4xl font-black text-white tracking-normal uppercase leading-none">{APP_NAME}</h1>
+          <p className="text-[6px] sm:text-[8px] font-black text-slate-600 uppercase tracking-[0.3em] sm:tracking-[0.4em] mt-1 sm:mt-2">Autonomous Protocol Access</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-3 sm:space-y-5" noValidate>

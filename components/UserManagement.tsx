@@ -91,7 +91,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
     <div className="max-w-6xl mx-auto space-y-6 sm:space-y-8 animate-in fade-in duration-700 pb-12 sm:pb-20 font-['Inter']" data-page="users-inline-v2">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-8 text-left">
         <div>
-          <h1 className="text-2xl sm:text-4xl font-black text-white tracking-tighter uppercase">{t('users')}</h1>
+          <h1 className="text-2xl sm:text-4xl font-black text-white tracking-normal uppercase">{t('users')}</h1>
           <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] sm:tracking-[0.5em] mt-1 sm:mt-2">Team Security Configuration</p>
         </div>
         {isAdmin && (
