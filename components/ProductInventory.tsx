@@ -60,7 +60,31 @@ const MultiQuantityInput: React.FC<{ options: string[]; value: Record<string, nu
   );
 };
 
-const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; placeholder: string; }> = ({ value, onChange, placeholder }) => {
+const StarRatingInput: React.FC<{ value: number | string; onChange: (val: number) => void }> = ({ value, onChange }) => {
+  const num = typeof value === 'number' ? value : parseFloat(String(value)) || 0;
+  const v = Math.min(5, Math.max(0, num));
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => onChange(n)}
+            className="p-0.5 rounded hover:bg-white/5 transition-colors"
+            title={`${n}`}
+          >
+            <Star size={20} className={v >= n ? 'text-[#A3E635]' : 'text-slate-700'} fill={v >= n ? 'currentColor' : 'none'} />
+          </button>
+        ))}
+      </div>
+      <button type="button" onClick={() => onChange(0)} className="text-[9px] text-slate-500 hover:text-slate-400 font-black px-2 py-1 rounded border border-white/5">—</button>
+      <input type="number" min="0" max="5" step="0.01" value={v || ''} onChange={e => { const x = parseFloat(e.target.value); if (!isNaN(x)) onChange(x); }} className="w-12 bg-slate-950 border border-white/5 rounded-lg px-2 py-1 text-[10px] font-black text-center text-[#A3E635] outline-none focus:border-[#A3E635]/40" placeholder="0-5" />
+    </div>
+  );
+};
+
+const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; placeholder?: string; t: (key: string) => string }> = ({ value, onChange, t }) => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -100,7 +124,7 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
       <input
         type="url"
         className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner placeholder:text-slate-600"
-        placeholder="粘贴图片链接（从电商页右键主图「复制图片地址」后 Ctrl+V）"
+        placeholder={t('main_image_paste_hint')}
         value={showInInput ? value : ''}
         title={showInInput ? value : undefined}
         onChange={e => onChange(e.target.value.trim())}
@@ -117,7 +141,7 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
           ) : (
             <div className="text-center">
               <div className="size-10 bg-slate-950 rounded-xl flex items-center justify-center text-slate-700 mx-auto mb-2 shadow-inner"><ImageIcon size={20} /></div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">或点击上传本地图片</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{t('or_upload_local')}</p>
             </div>
           )}
           <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
@@ -243,8 +267,8 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
     setIsEditingProduct(true);
     setEditFormData({
       ...selectedProduct,
-      linkUrl: selectedProduct?.attributes?.link_url || '',
-      mainImage: selectedProduct?.attributes?.mainImage || '',
+      linkUrl: selectedProduct?.linkUrl || selectedProduct?.attributes?.link_url || '',
+      mainImage: selectedProduct?.mainImage || selectedProduct?.attributes?.mainImage || selectedProduct?.attributes?.main_image || '',
       sellingPoints: selectedProduct?.attributes?.selling_points || [],
       pros: selectedProduct?.attributes?.pros || '',
       cons: selectedProduct?.attributes?.cons || '',
@@ -278,26 +302,34 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
         return;
       }
       
-      // 按照 App.tsx 中 handleProductUpdate 期望的数据结构（必须含 categoryId）
-      const updateData = {
+      const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
+      const sellingPointsVal = Array.isArray(editFormData.sellingPoints)
+        ? editFormData.sellingPoints.join(', ')
+        : (editFormData.sellingPoints?.trim?.() || '');
+      const updateData: Record<string, any> = {
         categoryId: editFormData.categoryId || selectedProduct.categoryId,
         brand: editFormData.brand?.trim() || '',
         model: editFormData.model?.trim() || '',
         channel: editFormData.channel?.trim() || '',
         shopName: editFormData.shopName?.trim() || '',
         price: Number(editFormData.price) || 0,
+        actualPrice: editFormData.actualPrice != null && editFormData.actualPrice !== '' ? Number(editFormData.actualPrice) : undefined,
         rating: Number(editFormData.rating) || 0,
         monthlySales: Number(editFormData.monthlySales) || 0,
-        // App.tsx 期望这些字段在顶级
         linkUrl: editFormData.linkUrl?.trim() || '',
-        mainImage: editFormData.mainImage?.trim() || '',
-        // 其他动态属性
-        sellingPoints: editFormData.sellingPoints?.trim() || '',
+        mainImage: (typeof editFormData.mainImage === 'string' ? editFormData.mainImage.trim() : editFormData.mainImage) || '',
+        sellingPoints: sellingPointsVal,
         pros: editFormData.pros?.trim() || '',
         cons: editFormData.cons?.trim() || '',
         rawReview: editFormData.rawReview?.trim() || '',
         insightSummary: editFormData.insightSummary?.trim() || ''
       };
+      // 保留品类动态字段（抽屉编辑未展示的字段从 selectedProduct 带入）
+      activeCat?.fields?.forEach(f => {
+        if (['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','pros','cons','rawReview','insightSummary','categoryId'].includes(f.id)) return;
+        const val = editFormData[f.id] ?? selectedProduct?.[f.id] ?? selectedProduct?.attributes?.[f.id];
+        if (val !== undefined && val !== null) updateData[f.id] = val;
+      });
       
       console.log('保存数据:', updateData);
       onUpdate(selectedProduct.id, updateData);
@@ -337,11 +369,11 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       const simple = simplifyForAI(product as Record<string, unknown>);
       const prompt = `你是一位专业的产品分析师。请分析此单品：${JSON.stringify(simple)}。请给出1条实战销售战术，语言精炼，直接输出建议即可。`;
       const aiText = await callGemini(prompt);
-      setAiAnalysis(aiText || 'AI 响应内容为空');
+      setAiAnalysis(aiText || t('ai_response_empty'));
       if (aiText) console.log('✅ AI 分析成功');
     } catch (e: any) {
       console.error('🚨 AI分析失败:', e.message);
-      setAiAnalysis(`分析中断: ${e.message}`);
+      setAiAnalysis(`${t('ai_analysis_interrupted')}: ${e.message}`);
     } finally {
       setIsAiAnalyzing(false);
     }
@@ -372,7 +404,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       setCompetitorAnalysis(text);
     } catch (error: any) {
       console.error('AI竞品对策错误:', error);
-      setCompetitorAnalysis(error?.message ? `分析中断: ${error.message}` : "AI 竞品分析受阻，请稍后重试。");
+      setCompetitorAnalysis(error?.message ? `${t('ai_analysis_interrupted')}: ${error.message}` : t('ai_competitor_blocked'));
     } finally {
       setIsCompetitorAnalyzing(false);
     }
@@ -381,6 +413,18 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCategory) return;
+    if (!formData.brand?.trim()) {
+      alert(t('brand_required'));
+      return;
+    }
+    if (!formData.model?.trim()) {
+      alert(t('model_required'));
+      return;
+    }
+    if (!formData.channel?.trim()) {
+      alert(t('channel_required'));
+      return;
+    }
     const finalData = { ...formData, categoryId: activeCategory.id };
     if (editingId) onUpdate(editingId, finalData); else onAdd(finalData);
     handleCloseModal();
@@ -388,7 +432,9 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
 
   const renderFieldInput = (field: ProductField) => {
     const baseInput = "w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner";
-    const fieldValue = formData[field.id] || '';
+    const fieldValue = field.type === FieldType.MULTI_SELECT_QUANTITY
+      ? (typeof formData[field.id] === 'object' && formData[field.id] !== null ? formData[field.id] : {})
+      : (formData[field.id] ?? '');
     
     // 防崩溃：确保 field.options 存在且是数组
     const fieldOptions = Array.isArray(field?.options) ? field.options : [];
@@ -399,7 +445,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       case FieldType.MULTI_SELECT_QUANTITY: 
         return <MultiQuantityInput options={fieldOptions} value={fieldValue} onChange={(val) => setFormData({...formData, [field.id]: val})} />;
       case FieldType.IMAGE: 
-        return <ImageInput value={fieldValue} onChange={(val) => setFormData({...formData, [field.id]: val})} placeholder={field.name} />;
+        return <ImageInput value={fieldValue} onChange={(val) => setFormData({...formData, [field.id]: val})} t={t} />;
       case FieldType.SELECT: 
         return (
           <div className="relative">
@@ -415,7 +461,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       case FieldType.NUMBER: 
         return <input type="number" step="0.01" className={baseInput} placeholder="0.00" value={fieldValue} onChange={e => setFormData({...formData, [field.id]: e.target.value === '' ? '' : parseFloat(e.target.value)})} />;
       case FieldType.RATING: 
-        return <input type="number" min="0" max="5" step="0.1" className={baseInput} placeholder="0-5" value={fieldValue} onChange={e => setFormData({...formData, [field.id]: e.target.value})} />;
+        return <StarRatingInput value={fieldValue} onChange={(val) => setFormData({...formData, [field.id]: val})} />;
       case FieldType.URL: 
         return <input type="url" className={baseInput} placeholder="https://..." value={fieldValue} onChange={e => setFormData({...formData, [field.id]: e.target.value})} />;
       default: 
@@ -584,12 +630,14 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                                     >
                                       <Eye size={14} /> {t('view_detail')}
                                     </button>
-                                    <button 
-                                      onClick={() => handleDeleteFromList(p.id, p.model || p.brand || t('product_item'))} 
-                                      className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-500/10 flex items-center gap-2"
-                                    >
-                                      <Trash2 size={14} /> {t('delete')}
-                                    </button>
+                                    {canEdit && (
+                                      <button 
+                                        onClick={() => handleDeleteFromList(p.id, p.model || p.brand || t('product_item'))} 
+                                        className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-500/10 flex items-center gap-2"
+                                      >
+                                        <Trash2 size={14} /> {t('delete')}
+                                      </button>
+                                    )}
                                   </div>
                                 </>
                               )}
@@ -618,9 +666,11 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
               <button onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); handleProductClick(p); }} className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2">
                 <Eye size={14} /> {t('view_detail')}
               </button>
-              <button onClick={() => handleDeleteFromList(p.id, p.model || p.brand || t('product_item'))} className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-500/10 flex items-center gap-2">
-                <Trash2 size={14} /> {t('delete')}
-              </button>
+              {canEdit && (
+                <button onClick={() => handleDeleteFromList(p.id, p.model || p.brand || t('product_item'))} className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-500/10 flex items-center gap-2">
+                  <Trash2 size={14} /> {t('delete')}
+                </button>
+              )}
             </div>
           </>,
           document.body
@@ -778,8 +828,25 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                                  step="0.01"
                                  className="w-full bg-slate-900 border border-white/5 rounded-xl pl-4 pr-16 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
                                  placeholder="0.00" 
-                                 value={formData.price || ''}
+                                 value={formData.price ?? ''}
                                  onChange={e => setFormData({...formData, price: e.target.value === '' ? '' : parseFloat(e.target.value)})}
+                               />
+                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-black">¥</span>
+                            </div>
+                         </div>
+                         
+                         <div className="space-y-3">
+                            <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
+                               {t('actual_price')}
+                            </label>
+                            <div className="relative">
+                               <input 
+                                 type="number" 
+                                 step="0.01"
+                                 className="w-full bg-slate-900 border border-white/5 rounded-xl pl-4 pr-16 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
+                                 placeholder="0.00" 
+                                 value={formData.actualPrice ?? ''}
+                                 onChange={e => setFormData({...formData, actualPrice: e.target.value === '' ? '' : parseFloat(e.target.value)})}
                                />
                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-black">¥</span>
                             </div>
@@ -794,8 +861,8 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                                  type="number" 
                                  className="w-full bg-slate-900 border border-white/5 rounded-xl pl-4 pr-16 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
                                  placeholder="0" 
-                                 value={formData.monthlySales || ''}
-                                 onChange={e => setFormData({...formData, monthlySales: e.target.value === '' ? '' : parseInt(e.target.value)})}
+                                 value={formData.monthlySales ?? ''}
+                                 onChange={e => setFormData({...formData, monthlySales: e.target.value === '' ? '' : (parseFloat(e.target.value) || 0)})}
                                />
                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-black">{t('units_per_month')}</span>
                             </div>
@@ -805,19 +872,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
                                {t('rating_label')}
                             </label>
-                            <div className="relative">
-                               <input 
-                                 type="number" 
-                                 min="0" 
-                                 max="5" 
-                                 step="0.01"
-                                 className="w-full bg-slate-900 border border-white/5 rounded-xl pl-4 pr-16 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner" 
-                                 placeholder="4.75" 
-                                 value={formData.rating ?? ''}
-                                 onChange={e => setFormData({...formData, rating: e.target.value === '' ? '' : parseFloat(e.target.value)})}
-                               />
-                               <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 text-[10px] font-black">★</span>
-                            </div>
+                            <StarRatingInput value={formData.rating ?? ''} onChange={(val) => setFormData({...formData, rating: val})} />
                          </div>
                          
                          <div className="space-y-3 md:col-span-2">
@@ -843,7 +898,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                             <ImageInput 
                               value={formData.mainImage || ''} 
                               onChange={(val) => setFormData({...formData, mainImage: val})} 
-                              placeholder={t('main_image_placeholder')} 
+                              t={t}
                             />
                          </div>
                       </div>
@@ -911,9 +966,9 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
            <div className="center-modal-container flex flex-col max-w-2xl sm:max-w-4xl animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
               <div className="px-4 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8 border-b border-white/5 flex items-center justify-between gap-3 bg-slate-900/40 shrink-0">
                  <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-                    <div className="px-2 sm:px-3 py-0.5 sm:py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[8px] sm:text-[9px] font-black uppercase tracking-widest rounded-lg shrink-0">{detailedProduct?.brand || '未知品牌'}</div>
+                    <div className="px-2 sm:px-3 py-0.5 sm:py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[8px] sm:text-[9px] font-black uppercase tracking-widest rounded-lg shrink-0">{detailedProduct?.brand || t('unknown_brand')}</div>
                     <div className="h-3 sm:h-4 w-px bg-white/10 shrink-0"></div>
-                    <span className="text-[9px] sm:text-[10px] font-black text-white uppercase tracking-tight truncate">{detailedProduct?.model || '未命名产品'}</span>
+                    <span className="text-[9px] sm:text-[10px] font-black text-white uppercase tracking-tight truncate">{detailedProduct?.model || t('unnamed_product')}</span>
                  </div>
                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                     {canEdit && (
@@ -1099,7 +1154,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                         <span className="type-value">{selectedProduct.updatedAt ? new Date(selectedProduct.updatedAt).toLocaleDateString() : t('unknown')}</span>
                       </div>
                       <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="type-label">主图</span>
+                        <span className="type-label">{t('main_image')}</span>
                         <span className="type-value truncate max-w-[150px]">{(selectedProduct?.mainImage || selectedProduct?.attributes?.mainImage || selectedProduct?.attributes?.main_image) ? t('set') : t('not_set')}</span>
                       </div>
                     </div>
@@ -1127,10 +1182,19 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                     </div>
                     <p className="type-value-emphasis">¥{(Number(selectedProduct.price) || 0).toLocaleString()}</p>
                   </div>
+                  {(selectedProduct?.actualPrice != null && selectedProduct?.actualPrice !== '') && (
+                  <div className="premium-card p-6 border-white/10">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Zap size={16} className="text-amber-500" />
+                      <span className="type-label">{t('actual_price')}</span>
+                    </div>
+                    <p className="type-value-emphasis">¥{(Number(selectedProduct.actualPrice) || 0).toLocaleString()}</p>
+                  </div>
+                  )}
                   <div className="premium-card p-6 border-white/10">
                     <div className="flex items-center gap-3 mb-4">
                       <Package size={16} className="text-blue-500" />
-                      <span className="type-label">月销量</span>
+                        <span className="type-label">{t('monthly_sales')}</span>
                     </div>
                     <p className="type-value-emphasis">{(Number(selectedProduct.monthlySales) || 0).toLocaleString()}</p>
                   </div>
@@ -1138,7 +1202,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                 
                 {/* 品类自定义字段 - 按后台配置顺序展示，使用用户创建字段名称 */}
                 {(() => {
-                  const FIXED_IDS = ['brand', 'model', 'linkUrl', 'channel', 'shopName', 'price', 'monthlySales', 'rating', 'mainImage', 'link_url', 'main_image'];
+                  const FIXED_IDS = ['brand', 'model', 'linkUrl', 'channel', 'shopName', 'price', 'actualPrice', 'monthlySales', 'rating', 'mainImage', 'link_url', 'main_image'];
                   const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
                   const customFields = (activeCat?.fields ?? []).filter(f => f?.id && f?.name && !FIXED_IDS.includes(f.id));
                   if (customFields.length === 0) return null;
@@ -1292,7 +1356,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       <div>
                         <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('edit_product_info')}</h4>
-                        <p className="text-[8px] font-black text-orange-400 uppercase tracking-widest mt-1">Edit Product Information</p>
+                        <p className="text-[8px] font-black text-orange-400 uppercase tracking-widest mt-1">{t('edit_product_info')}</p>
                       </div>
                     </div>
                     
@@ -1344,20 +1408,25 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                         <input 
                           type="number" 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.price || ''}
+                          value={editFormData.price ?? ''}
                           onChange={e => setEditFormData({...editFormData, price: Number(e.target.value)})}
                         />
                       </div>
                       
                       <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('rating')}</label>
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('actual_price')}</label>
                         <input 
                           type="number" 
                           step="0.01"
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.rating || ''}
-                          onChange={e => setEditFormData({...editFormData, rating: Number(e.target.value)})}
+                          value={editFormData.actualPrice ?? ''}
+                          onChange={e => setEditFormData({...editFormData, actualPrice: e.target.value === '' ? '' : Number(e.target.value)})}
                         />
+                      </div>
+                      
+                      <div className="space-y-3">
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('rating')}</label>
+                        <StarRatingInput value={editFormData.rating ?? ''} onChange={(val) => setEditFormData({...editFormData, rating: val})} />
                       </div>
                       
                       <div className="space-y-3">
@@ -1365,7 +1434,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                         <input 
                           type="number" 
                           className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.monthlySales || ''}
+                          value={editFormData.monthlySales ?? ''}
                           onChange={e => setEditFormData({...editFormData, monthlySales: Number(e.target.value)})}
                         />
                       </div>
@@ -1381,13 +1450,8 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                       
                       <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('main_image_url')}</label>
-                        <input 
-                          type="url" 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.mainImage || ''}
-                          onChange={e => setEditFormData({...editFormData, mainImage: e.target.value})}
-                        />
+                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('main_image')}</label>
+                        <ImageInput value={editFormData.mainImage || ''} onChange={(val) => setEditFormData({...editFormData, mainImage: val})} t={t} />
                       </div>
                       
                       <div className="space-y-3 md:col-span-2">
@@ -1439,6 +1503,52 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                           onChange={e => setEditFormData({...editFormData, insightSummary: e.target.value})}
                         />
                       </div>
+                      
+                      {/* 品类动态字段 */}
+                      {(() => {
+                        const FIXED_IDS = ['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','pros','cons','rawReview','insightSummary','categoryId'];
+                        const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
+                        const dynFields = (activeCat?.fields ?? []).filter(f => f?.id && f?.name && !FIXED_IDS.includes(f.id));
+                        if (dynFields.length === 0) return null;
+                        const baseInput = "w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner";
+                        const renderDyn = (f: ProductField) => {
+                          const val = editFormData[f.id] ?? selectedProduct?.[f.id] ?? selectedProduct?.attributes?.[f.id];
+                          const opts = Array.isArray(f?.options) ? f.options : [];
+                          const isWide = f.type === FieldType.MULTI_SELECT_QUANTITY || f.type === FieldType.TEXTAREA || f.type === FieldType.IMAGE;
+                          const fieldVal = f.type === FieldType.MULTI_SELECT_QUANTITY ? (typeof val === 'object' && val !== null ? val : {}) : (val ?? '');
+                          return (
+                            <div key={f.id} className={`space-y-3 ${isWide ? 'md:col-span-2' : ''}`}>
+                              <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{f.name}{f?.required && <span className="text-red-400">*</span>}</label>
+                              {f.type === FieldType.DATE && <input type="date" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
+                              {f.type === FieldType.MULTI_SELECT_QUANTITY && <MultiQuantityInput options={opts} value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} />}
+                              {f.type === FieldType.IMAGE && <ImageInput value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} t={t} />}
+                              {f.type === FieldType.SELECT && (
+                                <select className={`${baseInput} appearance-none pr-10`} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})}>
+                                  <option value="">{t('all')}</option>
+                                  {opts.map(o => <option key={o} value={o} className="bg-slate-900">{o}</option>)}
+                                </select>
+                              )}
+                              {f.type === FieldType.TEXTAREA && <textarea className={`${baseInput} min-h-[80px] normal-case font-medium`} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
+                              {f.type === FieldType.NUMBER && <input type="number" step="0.01" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value === '' ? '' : parseFloat(e.target.value)})} />}
+                              {f.type === FieldType.RATING && <StarRatingInput value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} />}
+                              {f.type === FieldType.URL && <input type="url" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
+                              {(!f.type || f.type === FieldType.TEXT) && <input type="text" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
+                            </div>
+                          );
+                        };
+                        return (
+                          <>
+                            <div className="md:col-span-2 flex items-center gap-4 pb-4 border-b border-white/5">
+                              <div className="size-10 bg-indigo-600/20 rounded-xl flex items-center justify-center"><Database size={20} className="text-indigo-400" /></div>
+                              <div>
+                                <h5 className="text-[11px] font-black text-white uppercase">{t('category_params')}</h5>
+                                <p className="text-[8px] text-slate-500">{activeCat?.name}</p>
+                              </div>
+                            </div>
+                            {dynFields.map(renderDyn)}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 )}

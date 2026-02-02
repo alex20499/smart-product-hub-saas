@@ -33,7 +33,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
 
     const isDuplicate = users.some(u => u.username.toLowerCase() === trimmedUsername.toLowerCase());
     if (isDuplicate) {
-      setFormError("USERNAME ALREADY EXISTS IN THIS NODE");
+      setFormError(t('username_exists'));
       return;
     }
 
@@ -44,6 +44,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
       role: newRole,
       avatar: `https://picsum.photos/seed/${trimmedUsername}/100/100`
     };
+    if (trimmedUsername.includes('@')) newUser.email = trimmedUsername;
 
     onAddUser(newUser);
     setIsAddFormOpen(false);
@@ -73,17 +74,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
     const trimmedUsername = newUsername.trim();
     const isDuplicate = users.some(u => u.id !== editingUserId && u.username.toLowerCase() === trimmedUsername.toLowerCase());
     if (isDuplicate) {
-      setFormError("USERNAME ALREADY EXISTS IN THIS NODE");
+      setFormError(t('username_exists'));
       return;
     }
 
-    onUpdateUser({
+    const update: User = {
       id: editingUserId,
       username: trimmedUsername,
       password: newPassword,
       role: newRole,
       avatar: `https://picsum.photos/seed/${trimmedUsername}/100/100`
-    });
+    };
+    if (trimmedUsername.includes('@')) update.email = trimmedUsername;
+    onUpdateUser(update);
     closeEditForm();
   };
 
@@ -92,7 +95,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-8 text-left">
         <div>
           <h1 className="text-2xl sm:text-4xl font-black text-white tracking-normal uppercase">{t('users')}</h1>
-          <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] sm:tracking-[0.5em] mt-1 sm:mt-2">Team Security Configuration</p>
+          <p className="text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] sm:tracking-[0.5em] mt-1 sm:mt-2">{t('users_subtitle')}</p>
         </div>
         {isAdmin && (
           <button
@@ -122,8 +125,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
               <ShieldAlert size={20} />
             </div>
             <div>
-              <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-tight">New Clearance</h3>
-              <p className="text-[9px] text-slate-500 uppercase tracking-widest mt-0.5">添加新成员</p>
+              <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-tight">{t('new_clearance')}</h3>
+              <p className="text-[9px] text-slate-500 uppercase tracking-widest mt-0.5">{t('add_member_subtitle')}</p>
             </div>
           </div>
           <form onSubmit={addUser} className="space-y-4">
@@ -133,7 +136,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
                 <input
                   value={newUsername}
                   onChange={e => setNewUsername(e.target.value)}
-                  placeholder="USERNAME"
+                  placeholder={t('username_placeholder')}
                   className={`w-full bg-slate-900 border rounded-xl px-4 py-3 text-[11px] font-black uppercase text-white outline-none tracking-widest transition-all ${formError ? 'border-red-500/50' : 'border-white/5 focus:border-[#38BDF8]/50'}`}
                   required
                 />
@@ -144,7 +147,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
                   type="password"
-                  placeholder="PASSWORD"
+                  placeholder={t('password_placeholder')}
                   className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-[11px] font-black uppercase text-white outline-none tracking-widest focus:border-[#38BDF8]/50"
                   required
                 />
@@ -156,9 +159,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
                   onChange={e => setNewRole(e.target.value as UserRole)}
                   className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-[11px] font-black uppercase text-white outline-none tracking-widest focus:border-[#38BDF8]/50 appearance-none"
                 >
-                  <option value="viewer" className="bg-slate-900">Viewer</option>
-                  <option value="editor" className="bg-slate-900">Editor</option>
-                  <option value="admin" className="bg-slate-900">Admin</option>
+                  <option value="viewer" className="bg-slate-900">{t('role_viewer')}</option>
+                  <option value="editor" className="bg-slate-900">{t('role_editor')}</option>
+                  <option value="admin" className="bg-slate-900">{t('role_admin')}</option>
                 </select>
               </div>
             </div>
@@ -186,7 +189,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
               </div>
               <div>
                 <h3 className="text-base sm:text-lg font-black text-white uppercase tracking-tight">{t('edit_user')}</h3>
-                <p className="text-[9px] text-slate-500 uppercase tracking-widest mt-0.5">修改成员信息</p>
+                <p className="text-[9px] text-slate-500 uppercase tracking-widest mt-0.5">{t('edit_member_subtitle')}</p>
               </div>
             </div>
             <button onClick={closeEditForm} className="p-2 text-slate-500 hover:text-white rounded-lg transition-colors">
@@ -200,7 +203,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
                 <input
                   value={newUsername}
                   onChange={e => setNewUsername(e.target.value)}
-                  placeholder="USERNAME"
+                  placeholder={t('username_placeholder')}
                   className={`w-full bg-slate-900 border rounded-xl px-4 py-3 text-[11px] font-black uppercase text-white outline-none tracking-widest transition-all ${formError ? 'border-red-500/50' : 'border-white/5 focus:border-[#A3E635]/50'}`}
                   required
                 />
@@ -211,7 +214,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
                   type="password"
-                  placeholder="PASSWORD (留空不修改)"
+                  placeholder={t('password_placeholder_optional')}
                   className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-[11px] font-black uppercase text-white outline-none tracking-widest focus:border-[#A3E635]/50"
                 />
               </div>
@@ -223,9 +226,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
                   className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-[11px] font-black uppercase text-white outline-none tracking-widest focus:border-[#A3E635]/50 appearance-none"
                   disabled={editingUserId === currentUser.id}
                 >
-                  <option value="viewer" className="bg-slate-900">Viewer</option>
-                  <option value="editor" className="bg-slate-900">Editor</option>
-                  <option value="admin" className="bg-slate-900">Admin</option>
+                  <option value="viewer" className="bg-slate-900">{t('role_viewer')}</option>
+                  <option value="editor" className="bg-slate-900">{t('role_editor')}</option>
+                  <option value="admin" className="bg-slate-900">{t('role_admin')}</option>
                 </select>
               </div>
             </div>
@@ -249,10 +252,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
           <table className="w-full text-left min-w-[480px]">
             <thead>
               <tr className="bg-slate-800/20 text-[9px] sm:text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] sm:tracking-[0.4em] border-b border-white/5">
-                <th className="px-4 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8">Entity Identifier</th>
+                <th className="px-4 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8">{t('entity_identifier')}</th>
                 <th className="px-4 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8">{t('clearance')}</th>
-                <th className="px-4 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8">Security</th>
-                <th className="px-4 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8 text-right">Protocol</th>
+                <th className="px-4 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8">{t('security')}</th>
+                <th className="px-4 sm:px-6 lg:px-10 py-4 sm:py-6 lg:py-8 text-right">{t('protocol')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -263,7 +266,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
                       <img src={user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.username || 'U')}&background=818CF8&color=fff`} className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl border border-white/10 p-0.5 shrink-0" alt={user.username} />
                       <div className="text-left">
                         <p className="font-black text-white uppercase tracking-widest text-sm">{user.username}</p>
-                        <p className="text-[9px] text-slate-600 font-bold uppercase mt-0.5">UID-{user.id}</p>
+                        <p className="text-[9px] text-slate-500 font-medium mt-0.5 truncate max-w-[200px]" title={user.email || (user.username?.includes('@') ? user.username : `${user.username || ''}@internal.local`)}>
+                          {t('login_id')}: {user.email || (user.username?.includes('@') ? user.username : `${user.username || ''}@internal.local`)}
+                        </p>
                       </div>
                     </div>
                   </td>

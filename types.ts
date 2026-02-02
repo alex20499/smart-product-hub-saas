@@ -42,6 +42,7 @@ export type Language = 'en' | 'zh' | 'ja';
 export interface User {
   id: string;
   username: string;
+  email?: string;
   password?: string;
   role: UserRole;
   avatar?: string;

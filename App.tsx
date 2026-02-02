@@ -1,6 +1,7 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import { supabase } from './lib/supabase';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { ProductInventory } from './components/ProductInventory';
@@ -10,11 +11,6 @@ import { Login } from './components/Login';
 import { AppState, Category, ProductData, User, Language } from './types';
 import { DEFAULT_CATEGORIES, STORAGE_KEY, MOCK_PRODUCTS, TRANSLATIONS } from './constants';
 import { ShieldAlert, RefreshCw } from 'lucide-react';
-
-const supabase = createClient(
-  process.env.SUPABASE_URL || '',
-  process.env.SUPABASE_ANON_KEY || ''
-);
 
 const INITIAL_USERS: User[] = [
   { id: '1', username: 'admin', password: 'password', role: 'admin', avatar: 'https://picsum.photos/seed/admin/32/32' }
@@ -55,6 +51,7 @@ const App: React.FC = () => {
   });
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const tRef = useRef<(k: string, r?: Record<string, string | number>) => string>(() => '');
   const t = (key: string, replacements?: Record<string, string | number>) => {
     const lang = TRANSLATIONS[state.language];
     let s: string;
@@ -69,6 +66,7 @@ const App: React.FC = () => {
     }
     return s;
   };
+  tRef.current = t;
 
   const fetchFromCloud = useCallback(async (silent = false) => {
     if (!silent) setIsSyncing(true);
@@ -164,15 +162,78 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.error("Cloud Sync Process Error:", err);
       // 防崩溃：即使同步失败也不影响页面显示
-      setDiagnostic({ msg: err?.message || '数据同步失败', code: 'SYNC_ERROR' });
+      setDiagnostic({ msg: err?.message || tRef.current('sync_failed'), code: 'SYNC_ERROR' });
     } finally {
       setIsSyncing(false);
     }
   }, []);
 
+  // Supabase Auth 会话恢复 + 获取用户角色
+  const restoreSession = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      setState((prev) => ({ ...prev, currentUser: null }));
+      return;
+    }
+    const { data: profile } = await supabase
+      .from('users')
+      .select('id, username, email, role')
+      .eq('auth_user_id', session.user.id)
+      .single();
+    if (profile) {
+      setState((prev) => ({
+        ...prev,
+        currentUser: {
+          id: profile.id,
+          username: profile.username || profile.email || '',
+          email: profile.email,
+          role: profile.role
+        }
+      }));
+    } else {
+      setState((prev) => ({ ...prev, currentUser: null }));
+    }
+  }, []);
+
   useEffect(() => {
-    fetchFromCloud();
-  }, [fetchFromCloud]);
+    restoreSession();
+  }, [restoreSession]);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session: Session | null) => {
+      if (!session?.user) {
+        setState((prev) => ({ ...prev, currentUser: null }));
+        return;
+      }
+      const { data: profile } = await supabase
+        .from('users')
+        .select('id, username, email, role')
+        .eq('auth_user_id', session.user.id)
+        .single();
+      if (profile) {
+        setState((prev) => ({
+          ...prev,
+          currentUser: {
+            id: profile.id,
+            username: profile.username || profile.email || '',
+            email: profile.email,
+            role: profile.role
+          }
+        }));
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const prevUserIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const uid = state.currentUser?.id ?? null;
+    if (uid && uid !== prevUserIdRef.current) {
+      prevUserIdRef.current = uid;
+      fetchFromCloud();
+    }
+    if (!uid) prevUserIdRef.current = null;
+  }, [state.currentUser?.id, fetchFromCloud]);
 
   const handleProductAdd = async (data: any) => {
     setIsSyncing(true);
@@ -190,6 +251,7 @@ const App: React.FC = () => {
         channel: restData.channel || '',
         shop_name: restData.shopName || '',
         price: Number(restData.price || 0),
+        actual_price: restData.actualPrice != null && restData.actualPrice !== '' ? Number(restData.actualPrice) : null,
         monthly_sales: Number(restData.monthlySales || 0),
         rating: Number(restData.rating || 0),
         main_image: restData.mainImage || '',
@@ -208,10 +270,10 @@ const App: React.FC = () => {
       delete dynamicFields.channel;
       delete dynamicFields.shopName;
       delete dynamicFields.price;
+      delete dynamicFields.actualPrice;
       delete dynamicFields.monthlySales;
       delete dynamicFields.rating;
       delete dynamicFields.mainImage;
-      delete dynamicFields.actualPrice;
       
       const payload = {
         ...fixedFields,
@@ -223,7 +285,7 @@ const App: React.FC = () => {
       await fetchFromCloud(true);
     } catch (err: any) {
       console.error('Product add error:', err);
-      setDiagnostic({ msg: err?.message || '添加产品失败', code: 'ADD_ERROR' });
+      setDiagnostic({ msg: err?.message || t('add_product_failed'), code: 'ADD_ERROR' });
     } finally {
       setIsSyncing(false);
     }
@@ -245,6 +307,7 @@ const App: React.FC = () => {
         channel: restData.channel || '',
         shop_name: restData.shopName || '',
         price: Number(restData.price || 0),
+        actual_price: restData.actualPrice != null && restData.actualPrice !== '' ? Number(restData.actualPrice) : null,
         monthly_sales: Number(restData.monthlySales || 0),
         rating: Number(restData.rating || 0),
         main_image: restData.mainImage || '',
@@ -262,10 +325,10 @@ const App: React.FC = () => {
       delete dynamicFields.channel;
       delete dynamicFields.shopName;
       delete dynamicFields.price;
+      delete dynamicFields.actualPrice;
       delete dynamicFields.monthlySales;
       delete dynamicFields.rating;
       delete dynamicFields.mainImage;
-      delete dynamicFields.actualPrice;
       
       const payload = {
         ...fixedFields,
@@ -277,7 +340,7 @@ const App: React.FC = () => {
       await fetchFromCloud(true);
     } catch (err: any) {
       console.error('Product update error:', err);
-      setDiagnostic({ msg: err?.message || '更新产品失败', code: 'UPDATE_ERROR' });
+      setDiagnostic({ msg: err?.message || t('update_product_failed'), code: 'UPDATE_ERROR' });
     } finally {
       setIsSyncing(false);
     }
@@ -352,7 +415,7 @@ const App: React.FC = () => {
       await fetchFromCloud(true);
     } catch (err: any) {
       console.error('handleUpdateCategories error:', err);
-      setDiagnostic({ msg: err?.message || '更新品类失败', code: 'UPDATE_CAT_ERROR' });
+      setDiagnostic({ msg: err?.message || t('update_category_failed'), code: 'UPDATE_CAT_ERROR' });
     } finally {
       setIsSyncing(false);
     }
@@ -367,16 +430,35 @@ const App: React.FC = () => {
 
   const handleUserAdd = async (user: User) => {
     setIsSyncing(true);
-    // users 表无 avatar 列，只插入 DB 存在的字段
-    const { error } = await supabase.from('users').insert([{
-      id: user.id,
-      username: user.username,
-      password: user.password || '',
-      role: user.role,
-      email: null
-    }]);
-    if (error) setDiagnostic({ msg: error.message, code: error.code });
-    await fetchFromCloud(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setDiagnostic({ msg: t('auth_expired'), code: 'AUTH_EXPIRED' });
+        return;
+      }
+      const email = user.email || (user.username?.includes('@') ? user.username : null);
+      const res = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          email: email || user.username,
+          username: user.username,
+          password: user.password || 'password',
+          role: user.role
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDiagnostic({ msg: data?.error?.message || `创建失败: ${res.status}`, code: data?.code });
+        return;
+      }
+      await fetchFromCloud(true);
+    } catch (err: any) {
+      setDiagnostic({ msg: err?.message || t('create_user_failed'), code: 'CREATE_USER_ERR' });
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleUserUpdate = async (user: User) => {
@@ -384,6 +466,7 @@ const App: React.FC = () => {
     // users 表无 avatar 列，只更新 DB 存在的字段；密码为空则不更新密码
     const payload: Record<string, unknown> = { username: user.username, role: user.role };
     if (user.password && user.password.trim()) payload.password = user.password.trim();
+    if (user.email !== undefined) payload.email = user.email || null;
     const { error } = await supabase.from('users').update(payload).eq('id', user.id);
     if (error) setDiagnostic({ msg: error.message, code: error.code });
     await fetchFromCloud(true);
@@ -396,22 +479,38 @@ const App: React.FC = () => {
     await fetchFromCloud(true);
   };
 
-  const login = (username: string, password: string) => {
-    const user = state.users.find(u => u.username.toLowerCase() === username.toLowerCase() && u.password === password);
-    if (user) {
-      setState(prev => ({ ...prev, currentUser: { ...user } }));
-      return true;
-    }
-    return false;
+  const login = async (email: string, password: string): Promise<boolean> => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return false;
+    if (!data.session?.user) return false;
+    const { data: profile } = await supabase
+      .from('users')
+      .select('id, username, email, role')
+      .eq('auth_user_id', data.session.user.id)
+      .single();
+    if (!profile) return false;
+    setState((prev) => ({
+      ...prev,
+      currentUser: {
+        id: profile.id,
+        username: profile.username || profile.email || '',
+        email: profile.email,
+        role: profile.role
+      }
+    }));
+    return true;
   };
 
-  const logout = () => {
-    setState(prev => ({ ...prev, currentUser: null, view: 'dashboard' }));
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setState((prev) => ({ ...prev, currentUser: null, view: 'dashboard' }));
   };
 
   const setView = (view: AppState['view']) => {
-    if ((view === 'users' || view === 'settings') && state.currentUser?.role !== 'admin') return;
-    setState(prev => ({ ...prev, view }));
+    const role = state.currentUser?.role;
+    if (view === 'users' && role !== 'admin') return;
+    if (view === 'settings' && role !== 'admin' && role !== 'editor') return;
+    setState((prev) => ({ ...prev, view }));
   };
   
   const setLanguage = (lang: Language) => setState(prev => ({ ...prev, language: lang }));
@@ -426,6 +525,7 @@ const App: React.FC = () => {
 
   if (!state.currentUser) return <Login onLogin={login} language={state.language} t={t} />;
 
+
   return (
     <Layout 
       currentView={state.view} setView={setView} currentUser={state.currentUser} onLogout={logout}
@@ -439,7 +539,7 @@ const App: React.FC = () => {
              <div className="w-full max-w-lg bg-slate-900 border border-red-500/30 rounded-2xl shadow-2xl overflow-hidden p-4 sm:p-6 space-y-4 sm:space-y-6 animate-in zoom-in-95 duration-200">
                 <div className="flex items-center gap-3 sm:gap-5 text-red-500">
                    <ShieldAlert size={22} className="sm:w-7 sm:h-7 shrink-0" />
-                   <h3 className="text-base sm:text-xl font-black uppercase text-white truncate">System Protocol Diagnostic</h3>
+                   <h3 className="text-base sm:text-xl font-black uppercase text-white truncate">{t('diagnostic_title')}</h3>
                 </div>
                 <div className="bg-black/40 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-white/5 font-mono text-[10px] sm:text-[11px] text-slate-300 break-words">
                    <p className="text-red-400">STATUS_CODE: {diagnostic.code}</p>
@@ -447,9 +547,9 @@ const App: React.FC = () => {
                 </div>
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <button onClick={() => { setDiagnostic(null); fetchFromCloud(); }} className="flex-1 py-4 sm:py-5 bg-white text-slate-950 rounded-xl sm:rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
-                    <RefreshCw size={14} /> Re-sync Node
+                    <RefreshCw size={14} /> {t('resync_node')}
                   </button>
-                  <button onClick={() => setDiagnostic(null)} className="px-6 sm:px-10 py-4 sm:py-5 bg-slate-800 text-slate-400 rounded-xl sm:rounded-2xl font-black text-[10px] uppercase tracking-widest">Acknowledge</button>
+                  <button onClick={() => setDiagnostic(null)} className="px-6 sm:px-10 py-4 sm:py-5 bg-slate-800 text-slate-400 rounded-xl sm:rounded-2xl font-black text-[10px] uppercase tracking-widest">{t('acknowledge')}</button>
                 </div>
              </div>
           </div>
@@ -467,7 +567,7 @@ const App: React.FC = () => {
           <Settings 
             categories={state.categories} onUpdateCategories={handleUpdateCategories} 
             onDeleteCategory={handleCategoryDelete}
-            isAdmin={state.currentUser.role === 'admin'} allData={state} t={t} 
+            isAdmin={state.currentUser.role === 'admin'} t={t} 
           />
         )}
         {state.view === 'users' && (

@@ -5,7 +5,7 @@ import {
   LayoutGrid, Database, Save, X, Settings2, ChevronDown,
   ArrowUp, ArrowDown, Package
 } from 'lucide-react';
-import { Category, ProductField, FieldType, ProductData } from '../types';
+import { Category, ProductField, FieldType } from '../types';
 import { CATEGORY_SPECIFIC_FIELDS } from '../constants';
 
 interface SettingsProps {
@@ -13,11 +13,6 @@ interface SettingsProps {
   onUpdateCategories: (categories: Category[]) => void;
   onDeleteCategory: (id: string) => void;
   isAdmin: boolean;
-  allData: {
-    categories: Category[];
-    products: ProductData[];
-    users: any[];
-  };
   t: (key: string) => string;
 }
 
@@ -41,7 +36,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
   const addCategory = () => {
     if (!canEdit || !newCatName.trim()) return;
     const newCat: Category = { 
-      id: 'cat_' + Math.random().toString(36).substr(2, 9), 
+      id: 'cat_' + crypto.randomUUID().slice(0, 8), 
       name: newCatName.toUpperCase(), 
       fields: JSON.parse(JSON.stringify(CATEGORY_SPECIFIC_FIELDS)) // 只包含品类特定字段，排除核心字段
     };
@@ -88,7 +83,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
   // 精准按钮排序逻辑
   const moveField = (index: number, direction: 'up' | 'down') => {
     if (!selectedCategory) return;
-    const newFields = [...selectedCategory.fields];
+    const newFields = [...(selectedCategory.fields ?? [])];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     
     if (targetIndex < 0 || targetIndex >= newFields.length) return;
@@ -183,23 +178,25 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                       <Package size={20} className="text-[#A3E635]" />
                    </div>
                    <div>
-                      <h4 className="text-sm font-black text-white uppercase tracking-widest">核心字段</h4>
-                      <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">所有品类共有，不可编辑</p>
+                      <h4 className="text-sm font-black text-white uppercase tracking-widest">{t('core_fields')}</h4>
+                      <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">{t('core_fields_hint')}</p>
                    </div>
                 </div>
                 
                 {/* 显示核心字段列表，但不可编辑 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   {['brand', 'model', 'linkUrl', 'channel', 'price', 'monthlySales', 'rating', 'mainImage'].map((fieldId, index) => {
+                   {['brand', 'model', 'linkUrl', 'channel', 'shopName', 'price', 'actualPrice', 'monthlySales', 'rating', 'mainImage'].map((fieldId) => {
                       const fieldNames: Record<string, string> = {
-                        brand: '品牌',
-                        model: '产品名/型号',
-                        linkUrl: '产品链接',
-                        channel: '渠道/平台',
-                        price: '价格',
-                        monthlySales: '月销量',
-                        rating: '评分',
-                        mainImage: '主图'
+                        brand: t('brand'),
+                        model: t('model'),
+                        linkUrl: t('link_url'),
+                        channel: t('channel'),
+                        shopName: t('shop_name'),
+                        price: t('price'),
+                        actualPrice: t('actual_price'),
+                        monthlySales: t('monthly_sales'),
+                        rating: t('rating'),
+                        mainImage: t('main_image')
                       };
                       return (
                         <div key={fieldId} className="flex items-center gap-3 p-3 bg-slate-800/30 rounded-xl border border-white/5">
@@ -211,7 +208,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                               <p className="text-[8px] text-slate-500 uppercase tracking-widest">{fieldId}</p>
                            </div>
                            <div className="px-2 py-1 bg-[#A3E635]/10 border border-[#A3E635]/20 rounded-md">
-                              <span className="text-[8px] font-black text-[#A3E635] uppercase">固定</span>
+                              <span className="text-[8px] font-black text-[#A3E635] uppercase">{t('fixed')}</span>
                            </div>
                         </div>
                       );
@@ -225,8 +222,8 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                       <Settings2 size={20} className="text-indigo-400" />
                    </div>
                    <div>
-                      <h4 className="text-sm font-black text-white uppercase tracking-widest">品类参数</h4>
-                      <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">{selectedCategory?.name} 特有属性</p>
+                      <h4 className="text-sm font-black text-white uppercase tracking-widest">{t('category_params_label')}</h4>
+                      <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">{t('category_specific_hint', { name: selectedCategory?.name || '' })}</p>
                    </div>
                 </div>
                {(selectedCategory?.fields ?? []).map((field, index) => (

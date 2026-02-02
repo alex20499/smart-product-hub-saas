@@ -14,7 +14,8 @@ import { ProductData, ProductField, Category, FieldType } from '../types';
 import { callGemini, simplifyForAI } from '../utils/gemini';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, 
-  PieChart, Pie, LineChart, Line, CartesianGrid, ScatterChart, Scatter, ZAxis
+  PieChart, Pie, LineChart, Line, CartesianGrid, ScatterChart, Scatter, ZAxis,
+  ReferenceLine
 } from 'recharts';
 
 interface DashboardProps {
@@ -55,6 +56,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
   const [selectedChannel, setSelectedChannel] = useState<string>('all');
   const [selectedBrand, setSelectedBrand] = useState<string>('all');
   const [visibleProducts, setVisibleProducts] = useState(5);
+  const [leaderboardSort, setLeaderboardSort] = useState<'sales' | 'price' | 'rating'>('sales');
   
   const [activeDetailId, setActiveDetailId] = useState<string | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
@@ -112,8 +114,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
       .sort((a, b) => b.value - a.value);
   }, [marketData]);
 
+  const brandShareDataForPie = useMemo(() => {
+    const maxTop = 8;
+    if (brandShareData.length <= maxTop) return brandShareData;
+    const top = brandShareData.slice(0, maxTop);
+    const rest = brandShareData.slice(maxTop);
+    const othersVal = rest.reduce((acc, r) => acc + r.value, 0);
+    return [...top, { name: t('others'), value: othersVal }];
+  }, [brandShareData, t]);
+
   const sortedLeaderboard = useMemo(() => {
-    return [...marketData].sort((a, b) => (b?.monthlySales || 0) - (a?.monthlySales || 0));
+    const data = [...marketData];
+    if (leaderboardSort === 'sales') return data.sort((a, b) => (b?.monthlySales || 0) - (a?.monthlySales || 0));
+    if (leaderboardSort === 'price') return data.sort((a, b) => (b?.price || 0) - (a?.price || 0));
+    if (leaderboardSort === 'rating') return data.sort((a, b) => (Number(b?.rating) || 0) - (Number(a?.rating) || 0));
+    return data;
+  }, [marketData, leaderboardSort]);
+
+  const ratingDistributionData = useMemo(() => {
+    const buckets = [
+      { range: '0-1', min: 0, max: 1, count: 0 },
+      { range: '1-2', min: 1, max: 2, count: 0 },
+      { range: '2-3', min: 2, max: 3, count: 0 },
+      { range: '3-4', min: 3, max: 4, count: 0 },
+      { range: '4-5', min: 4, max: 5.01, count: 0 }
+    ];
+    marketData.forEach(p => {
+      const r = Number(p?.rating) || 0;
+      const b = buckets.find(x => r >= x.min && r < x.max);
+      if (b) b.count++;
+    });
+    return buckets;
   }, [marketData]);
 
   const COLORS = ['#A3E635', '#818CF8', '#FB923C', '#38BDF8', '#F472B6', '#2DD4BF'];
@@ -149,7 +180,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
       setGlobalAiAnalysis(text);
     } catch (error) {
       console.error('Gemini API Error Detail:', error);
-      setGlobalAiAnalysis("AI 分析节点受阻，原因：" + (error instanceof Error ? error.message : "未知错误"));
+      setGlobalAiAnalysis(t('ai_node_blocked') + ": " + (error instanceof Error ? error.message : t('unknown')));
     } finally {
       setIsGlobalAnalyzing(false);
     }
@@ -162,11 +193,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
       const simple = simplifyForAI(product as Record<string, unknown>);
       const prompt = `你是一位专业的产品分析师。请分析此单品：${JSON.stringify(simple)}。请给出1条实战销售战术，语言精炼，直接输出建议即可。`;
       const aiText = await callGemini(prompt);
-      setAiAnalysis(aiText || 'AI 响应内容为空');
+      setAiAnalysis(aiText || t('ai_response_empty'));
       if (aiText) console.log('✅ AI 分析成功');
     } catch (e: any) {
       console.error('🚨 AI分析失败:', e.message);
-      setAiAnalysis(`分析中断: ${e.message}`);
+      setAiAnalysis(`${t('ai_analysis_interrupted')}: ${e.message}`);
     } finally {
       setIsAiAnalyzing(false);
     }
@@ -258,7 +289,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                   <h4 className="text-[13px] font-black uppercase text-white tracking-widest flex items-center gap-2">
                      {t('ai_insights')}
                      {!isAiReady && <span className="px-2 py-0.5 bg-red-500/10 text-red-500 text-[9px] rounded-md border border-red-500/20 animate-pulse">{t('cancel')}</span>}
-                     {isAiReady && <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-[9px] rounded-md border border-green-500/20">✓ 就绪</span>}
+                     {isAiReady && <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-[9px] rounded-md border border-green-500/20">✓ {t('ready')}</span>}
                   </h4>
                   <p className={`text-[10px] font-black uppercase tracking-widest mt-1 ${isAiReady ? 'text-[#A3E635]' : 'text-slate-600'}`}>
                      {isAiReady ? t('ai_ready') : t('ai_lock_hint')}
@@ -281,7 +312,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
               <div className="flex items-center gap-3 mb-6 text-[#A3E635]">
                  <MessageSquare size={16} />
                  <p className="text-[11px] font-black uppercase tracking-widest">{t('ai_analysis')}</p>
-                 <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-[9px] rounded-md border border-green-500/20">✓ 完成</span>
+                 <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-[9px] rounded-md border border-green-500/20">✓ {t('done')}</span>
               </div>
               <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-medium text-left">
                  {globalAiAnalysis}
@@ -296,7 +327,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
              <div className="flex items-center justify-between opacity-50 group-hover:opacity-100 transition-opacity"><Percent size={20} /> <span className="text-[9px] font-black uppercase tracking-widest">{t('market_penetration')}</span></div>
              <div>
                 <h3 className="text-4xl lg:text-6xl font-black tracking-normal text-white font-num">{tacticalMetrics.marketShare.toFixed(1)}%</h3>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mt-4 leading-relaxed uppercase">{t('market_share')}</p>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mt-4 leading-relaxed uppercase">{selectedBrand === 'all' ? t('segment_coverage') : t('market_share')}</p>
              </div>
           </div>
           <div className="premium-card p-10 flex flex-col justify-between min-h-[220px] border-[#A3E635]/20 text-left group">
@@ -305,7 +336,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                 <h3 className="text-4xl lg:text-6xl font-black tracking-normal text-white font-num">{Math.round(tacticalMetrics.priceIndex)}<span className="text-xl ml-2 text-slate-500 uppercase">Index</span></h3>
                 <div className="flex items-center gap-2 mt-4">
                    <div className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${tacticalMetrics.priceIndex > 100 ? 'bg-red-500/10 text-red-400' : 'bg-green-500/10 text-green-400'}`}>
-                      {tacticalMetrics.priceIndex > 100 ? 'PREMIUM POS' : 'BUDGET POS'}
+                      {tacticalMetrics.priceIndex > 100 ? t('premium_pos') : t('budget_pos')}
                    </div>
                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-600">{t('vs_global_avg')}</p>
                 </div>
@@ -315,7 +346,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
              <div className="flex items-center justify-between text-[#818CF8]"><TrendingUp size={20} /> <span className="text-[9px] font-black uppercase tracking-widest">{t('segment_volume')}</span></div>
              <div>
                 <h3 className="text-4xl lg:text-6xl font-black tracking-normal text-white font-num">{tacticalMetrics.segmentSales.toLocaleString()}</h3>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mt-4 font-bold">UNITS EXECUTED IN CURRENT VIEW</p>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 mt-4 font-bold">{t('units_current_view')}</p>
              </div>
           </div>
       </div>
@@ -328,7 +359,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                     <div className="w-10 h-10 bg-slate-950 rounded-xl flex items-center justify-center text-[#FB923C] shadow-inner"><Target size={18} /></div>
                     <div>
                         <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('price_vs_sales')}</h4>
-                        <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mt-1">Price vs Sales Volume Matrix</p>
+                        <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mt-1">{t('price_sales_matrix')}</p>
                     </div>
                  </div>
               </div>
@@ -340,6 +371,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                         <XAxis type="number" dataKey="price" name={t('price')} unit="¥" axisLine={false} tickLine={false} tick={{fill: '#475569', fontSize: 10, fontWeight: 900}} />
                         <YAxis type="number" dataKey="monthlySales" name={t('sales')} unit="" axisLine={false} tickLine={false} tick={{fill: '#475569', fontSize: 10, fontWeight: 900}} />
                         <ZAxis type="number" dataKey="monthlySales" range={[150, 2500]} />
+                        {marketData.length >= 4 && (() => {
+                          const prices = [...marketData.map(p => Number(p?.price) || 0).filter(Boolean)].sort((a,b)=>a-b);
+                          const sales = [...marketData.map(p => Number(p?.monthlySales) || 0).filter(Boolean)].sort((a,b)=>a-b);
+                          const medP = prices.length ? prices[Math.floor(prices.length/2)] : 0;
+                          const medS = sales.length ? sales[Math.floor(sales.length/2)] : 0;
+                          return (
+                            <>
+                              <ReferenceLine x={medP} stroke="rgba(163,230,53,0.25)" strokeDasharray="4 4" />
+                              <ReferenceLine y={medS} stroke="rgba(163,230,53,0.25)" strokeDasharray="4 4" />
+                            </>
+                          );
+                        })()}
                         <Tooltip content={<CustomTooltip />} cursor={{ strokeDasharray: '3 3' }} />
                         <Scatter name="Market" data={marketData}>
                           {marketData.map((entry, index) => entry?.id ? (
@@ -363,12 +406,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                   <PieIcon size={18} className="text-slate-800" />
               </div>
               <div className="flex-1 min-h-[400px] mt-4">
-                {brandShareData.length > 0 ? (
+                {brandShareDataForPie.length > 0 ? (
                   <SafeChartContainer height="100%">
                     <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                         <PieChart>
                           <Pie
-                            data={brandShareData}
+                            data={brandShareDataForPie}
                             innerRadius={70}
                             outerRadius={100}
                             paddingAngle={8}
@@ -378,7 +421,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                             label={renderCustomizedPieLabel}
                             labelLine={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }}
                           >
-                            {brandShareData.map((entry, index) => entry?.name ? (
+                            {brandShareDataForPie.map((entry, index) => entry?.name ? (
                               <Cell key={`cell-${index}`} fill={entry.name === selectedBrand ? '#A3E635' : COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0.5)" strokeWidth={1} />
                             ) : null)}
                           </Pie>
@@ -396,9 +439,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
           </div>
       </div>
 
+      {/* 评分分布 */}
+      {marketData.length > 0 && (
+        <div className="premium-card p-10 lg:p-14 text-left border-white/5 min-w-0 overflow-hidden">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-slate-950 rounded-xl flex items-center justify-center text-[#A3E635] shadow-inner"><Star size={18} /></div>
+              <div>
+                <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('rating_distribution')}</h4>
+                <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mt-1">{t('products_by_rating')}</p>
+              </div>
+            </div>
+          </div>
+          <SafeChartContainer height={180}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+              <BarChart data={ratingDistributionData} margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" />
+                <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 900 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 900 }} allowDecimals={false} />
+                <Tooltip contentStyle={{ backgroundColor: 'rgba(15,23,42,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '1rem' }} />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                  {ratingDistributionData.map((entry, index) => (
+                    <Cell key={`bar-${index}`} fill={COLORS[index % COLORS.length]} fillOpacity={0.8} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </SafeChartContainer>
+        </div>
+      )}
+
       {/* 排行榜 */}
       <div className="space-y-8 text-left">
-          <div className="flex items-center justify-between px-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-6">
              <div className="flex items-center gap-4">
                <div className="size-10 bg-slate-900 rounded-xl flex items-center justify-center text-indigo-400 border border-white/5"><TableIcon size={18} /></div>
                <div>
@@ -406,7 +479,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                   <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">{t('ranking_velocity')}</p>
                </div>
              </div>
-             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{marketData.length} {t('skus_tracked')}</span>
+             <div className="flex items-center gap-2 flex-wrap">
+               <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{marketData.length} {t('skus_tracked')}</span>
+               <div className="flex items-center gap-1">
+                 {(['sales', 'price', 'rating'] as const).map(key => (
+                   <button
+                     key={key}
+                     onClick={() => setLeaderboardSort(key)}
+                     className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${leaderboardSort === key ? 'bg-[#A3E635] text-slate-950' : 'bg-slate-900/60 text-slate-500 hover:text-slate-300 border border-white/5'}`}
+                   >
+                     {key === 'sales' ? t('sort_by_sales') : key === 'price' ? t('sort_by_price') : t('sort_by_rating')}
+                   </button>
+                 ))}
+               </div>
+             </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4">
@@ -424,10 +510,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                      </div>
                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
-                           <span className="text-[9px] font-black text-[#818CF8] uppercase tracking-widest">{product?.brand || '未知品牌'}</span>
-                           <span className="text-[9px] font-bold text-slate-600 uppercase px-2 py-0.5 bg-slate-950 rounded-md border border-white/5">{product?.channel || '未知渠道'}</span>
+                           <span className="text-[9px] font-black text-[#818CF8] uppercase tracking-widest">{product?.brand || t('unknown_brand')}</span>
+                           <span className="text-[9px] font-bold text-slate-600 uppercase px-2 py-0.5 bg-slate-950 rounded-md border border-white/5">{product?.channel || t('unknown_channel')}</span>
                         </div>
-                        <h4 className="text-sm font-black text-white uppercase truncate group-hover:text-[#A3E635] transition-colors">{product?.model || '未命名产品'}</h4>
+                        <h4 className="text-sm font-black text-white uppercase truncate group-hover:text-[#A3E635] transition-colors">{product?.model || t('unnamed_product')}</h4>
                      </div>
                   </div>
                   
@@ -484,34 +570,44 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                     </div>
                     <div className="lg:col-span-7 space-y-6 min-w-0">
                        <div className="flex items-center gap-2 flex-wrap">
-                          <div className="px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[9px] font-black uppercase tracking-widest rounded-lg">{detailedProduct?.channel || '未知渠道'}</div>
-                          <div className="px-3 py-1 bg-slate-800 border border-white/5 text-slate-400 text-[9px] font-black uppercase tracking-widest rounded-lg">{detailedProduct?.brand || '未知品牌'}</div>
+                          <div className="px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[9px] font-black uppercase tracking-widest rounded-lg">{detailedProduct?.channel || t('unknown_channel')}</div>
+                          <div className="px-3 py-1 bg-slate-800 border border-white/5 text-slate-400 text-[9px] font-black uppercase tracking-widest rounded-lg">{detailedProduct?.brand || t('unknown_brand')}</div>
                           <div className="px-3 py-1 bg-[#A3E635]/10 border border-[#A3E635]/20 text-[#A3E635] text-[9px] font-black uppercase tracking-widest rounded-lg">{detailedCategory?.name || '—'}</div>
                        </div>
-                       <h1 className="text-2xl sm:text-4xl font-black text-white uppercase tracking-normal leading-tight">{detailedProduct?.model || '未命名产品'}</h1>
+                       <h1 className="text-2xl sm:text-4xl font-black text-white uppercase tracking-normal leading-tight">{detailedProduct?.model || t('unnamed_product')}</h1>
                        <div className="grid grid-cols-2 gap-4 sm:gap-8 border-b border-white/5 pb-6 sm:pb-10">
                           <div>
                              <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('price')}</p>
                              <p className="text-2xl sm:text-4xl font-black text-white font-num">¥{(Number(detailedProduct?.price) || 0).toLocaleString()}</p>
                           </div>
+                          {(detailedProduct?.actualPrice != null && detailedProduct?.actualPrice !== '') && (
+                          <div>
+                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('actual_price')}</p>
+                             <p className="text-2xl sm:text-4xl font-black text-amber-400 font-num">¥{(Number(detailedProduct?.actualPrice) || 0).toLocaleString()}</p>
+                          </div>
+                          )}
                           <div>
                              <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('volume')}</p>
                              <p className="text-2xl sm:text-4xl font-black text-[#A3E635] font-num">{(Number(detailedProduct?.monthlySales) || 0).toLocaleString()} <span className="text-xs uppercase ml-1">{t('units')}</span></p>
                           </div>
                           {(detailedProduct?.rating != null && detailedProduct?.rating !== '') && (
                           <div className="col-span-2">
-                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('rating') || '评分'}</p>
+                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('rating')}</p>
                              <div className="flex items-center gap-2">
-                                {Array.from({length: 5}).map((_, i) => (
-                                  <Star key={i} size={16} fill={i < Number(detailedProduct?.rating) ? "#A3E635" : "transparent"} className={i < Number(detailedProduct?.rating) ? "text-[#A3E635]" : "text-slate-800"} />
-                                ))}
+                                {Array.from({length: 5}).map((_, i) => {
+                                  const r = Number(detailedProduct?.rating) || 0;
+                                  const filled = i < Math.floor(r) || (i === Math.floor(r) && r % 1 >= 0.5);
+                                  return (
+                                    <Star key={i} size={16} fill={filled ? "#A3E635" : "transparent"} className={filled ? "text-[#A3E635]" : "text-slate-800"} />
+                                  );
+                                })}
                                 <span className="ml-2 text-xl font-black text-white font-num">{(Number(detailedProduct?.rating) || 0).toFixed(2)}</span>
                              </div>
                           </div>
                           )}
                           {((detailedProduct?.linkUrl || detailedProduct?.attributes?.link_url) && (
                           <div className="col-span-2">
-                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('visit_link') || '产品链接'}</p>
+                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('visit_link')}</p>
                              <a href={String(detailedProduct?.linkUrl || detailedProduct?.attributes?.link_url)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between gap-4 px-4 py-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl hover:bg-indigo-500 hover:text-white transition-all text-[10px] font-black uppercase tracking-widest truncate">
                                 <span className="truncate flex-1">{(detailedProduct?.linkUrl || detailedProduct?.attributes?.link_url) as string}</span>
                                 <ExternalLink size={14} className="shrink-0" />
@@ -576,7 +672,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                          <div className="size-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white"><Sparkles size={20} /></div>
                          <div>
                             <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('ai_tactical_analysis')}</h4>
-                            <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mt-1">Generated via Gemini Node</p>
+                            <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mt-1">{t('ai_generated_via')}</p>
                          </div>
                       </div>
                       <div className="prose prose-invert max-w-none">
@@ -588,14 +684,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                  {/* 卖点区 - 蓝色药丸标签（兼容 sellingPoints 字符串或 attributes.selling_points 数组） */}
                  {(() => {
                    const sp = detailedProduct?.sellingPoints ?? detailedProduct?.attributes?.selling_points;
-                   const points = Array.isArray(sp) ? sp : (typeof sp === 'string' && sp ? [sp] : []);
+                   const points = Array.isArray(sp) ? sp : (typeof sp === 'string' && sp ? sp.split(',').map((s: string) => s.trim()).filter(Boolean) : []);
                    return points.length > 0 ? (
                     <div className="premium-card p-8 border-blue-500/30 bg-blue-950/20">
                        <div className="flex items-center gap-4 mb-6">
                           <div className="size-10 bg-blue-600 rounded-xl flex items-center justify-center text-white"><Star size={20} /></div>
                           <div>
-                             <h4 className="text-[12px] font-black uppercase tracking-widest text-white">核心卖点</h4>
-                             <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest mt-1">Product Selling Points</p>
+                             <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('core_sell_points')}</h4>
+                             <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest mt-1">{t('product_sell_points')}</p>
                           </div>
                        </div>
                        <div className="flex flex-wrap gap-3">
@@ -616,8 +712,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                        <div className="flex items-center gap-4 mb-6">
                           <div className="size-10 bg-gradient-to-r from-green-500 to-red-500 rounded-xl flex items-center justify-center text-white"><MessageSquare size={20} /></div>
                           <div>
-                             <h4 className="text-[12px] font-black uppercase tracking-widest text-white">口碑对比</h4>
-                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">Customer Voice Analysis</p>
+                             <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('review_compare')}</h4>
+                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">{t('customer_voice_analysis')}</p>
                           </div>
                        </div>
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -628,7 +724,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                                    <div className="size-8 bg-green-500/20 rounded-lg flex items-center justify-center">
                                       <ThumbsUp size={16} className="text-green-400" />
                                    </div>
-                                   <h5 className="text-[10px] font-black text-green-400 uppercase tracking-widest">好评词云</h5>
+                                   <h5 className="text-[10px] font-black text-green-400 uppercase tracking-widest">{t('pros_wordcloud')}</h5>
                                 </div>
                                 <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-2xl">
                                    <p className="text-[11px] text-green-300 leading-relaxed">{detailedProduct?.pros ?? detailedProduct?.attributes?.pros}</p>
@@ -642,7 +738,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                                    <div className="size-8 bg-red-500/20 rounded-lg flex items-center justify-center">
                                       <ThumbsDown size={16} className="text-red-400" />
                                    </div>
-                                   <h5 className="text-[10px] font-black text-red-400 uppercase tracking-widest">差评词云</h5>
+                                   <h5 className="text-[10px] font-black text-red-400 uppercase tracking-widest">{t('cons_wordcloud')}</h5>
                                 </div>
                                 <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl">
                                    <p className="text-[11px] text-red-300 leading-relaxed">{detailedProduct?.cons ?? detailedProduct?.attributes?.cons}</p>
@@ -654,7 +750,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                  )}
 
                  {/* 痛点高亮 - 警告框（兼容 top-level 或 attributes） */}
-                 {(detailedProduct?.raw_review ?? detailedProduct?.attributes?.raw_review) && (
+                 {(detailedProduct?.rawReview ?? detailedProduct?.raw_review ?? detailedProduct?.attributes?.raw_review) && (
                     <div className="premium-card p-8 border-red-500/50 bg-red-950/30 relative overflow-hidden">
                        <div className="absolute top-0 right-0 p-4 opacity-20"><AlertTriangle size={80} className="text-red-400" /></div>
                        <div className="flex items-start gap-4 mb-6">
@@ -662,29 +758,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                              <AlertTriangle size={20} />
                           </div>
                           <div className="flex-1">
-                             <h4 className="text-[12px] font-black uppercase tracking-widest text-red-400">⚠️ 关键痛点</h4>
-                             <p className="text-[8px] font-black text-red-600 uppercase tracking-widest mt-1">Critical Customer Pain Point</p>
+                             <h4 className="text-[12px] font-black uppercase tracking-widest text-red-400">⚠️ {t('key_pain_point')}</h4>
+                             <p className="text-[8px] font-black text-red-600 uppercase tracking-widest mt-1">{t('critical_pain_point')}</p>
                           </div>
                        </div>
                        <div className="p-6 bg-red-500/10 border-2 border-red-500/30 rounded-2xl">
-                          <p className="text-[13px] font-bold text-red-300 leading-relaxed">"{detailedProduct?.raw_review ?? detailedProduct?.attributes?.raw_review}"</p>
+                          <p className="text-[13px] font-bold text-red-300 leading-relaxed">"{detailedProduct?.rawReview ?? detailedProduct?.raw_review ?? detailedProduct?.attributes?.raw_review}"</p>
                        </div>
                     </div>
                  )}
 
                  {/* 贾维斯洞察 - 市场洞察（兼容 top-level 或 attributes） */}
-                 {(detailedProduct?.insight_summary ?? detailedProduct?.attributes?.insight_summary) && (
+                 {(detailedProduct?.insightSummary ?? detailedProduct?.insight_summary ?? detailedProduct?.attributes?.insight_summary) && (
                     <div className="premium-card p-10 border-purple-500/30 bg-purple-950/20 relative overflow-hidden group">
                        <div className="absolute top-0 right-0 p-4 opacity-10"><Brain size={100} className="text-purple-400" /></div>
                        <div className="flex items-center gap-4 mb-8">
                           <div className="size-10 bg-purple-600 rounded-xl flex items-center justify-center text-white"><Brain size={20} /></div>
                           <div>
-                             <h4 className="text-[12px] font-black uppercase tracking-widest text-white">贾维斯洞察</h4>
-                             <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest mt-1">Market Opportunity Analysis</p>
+                             <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('jarvis_insight')}</h4>
+                             <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest mt-1">{t('market_opportunity_analysis')}</p>
                           </div>
                        </div>
                        <div className="prose prose-invert max-w-none">
-                          <div className="text-purple-300 text-sm leading-relaxed whitespace-pre-wrap font-medium">{detailedProduct?.insight_summary ?? detailedProduct?.attributes?.insight_summary}</div>
+                          <div className="text-purple-300 text-sm leading-relaxed whitespace-pre-wrap font-medium">{detailedProduct?.insightSummary ?? detailedProduct?.insight_summary ?? detailedProduct?.attributes?.insight_summary}</div>
                        </div>
                     </div>
                  )}

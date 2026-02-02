@@ -63,14 +63,16 @@ export const Layout: React.FC<LayoutProps> = ({
   }, []);
 
   const isAdmin = currentUser.role === 'admin';
+  const isEditor = currentUser.role === 'editor';
 
   const navItems = [
     { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard },
     { id: 'inventory', label: t('inventory'), icon: Package },
   ];
-
-  if (isAdmin) {
+  if (isAdmin || isEditor) {
     navItems.push({ id: 'settings', label: t('settings'), icon: SettingsIcon });
+  }
+  if (isAdmin) {
     navItems.push({ id: 'users', label: t('users'), icon: UsersIcon });
   }
 
@@ -147,7 +149,7 @@ export const Layout: React.FC<LayoutProps> = ({
               </div>
               <div>
                 <h4 className="text-xl lg:text-2xl font-black text-white uppercase tracking-tight">{currentUser.username}</h4>
-                <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-2 leading-relaxed">{currentUser.role === 'admin' ? 'SYSTEM ARCHITECT' : 'DATA ANALYST'}</p>
+                <p className="text-[9px] font-black text-slate-600 uppercase tracking-widest mt-2 leading-relaxed">{currentUser.role === 'admin' ? t('system_architect') : t('data_analyst')}</p>
               </div>
            </div>
 
@@ -160,7 +162,7 @@ export const Layout: React.FC<LayoutProps> = ({
                  </div>
               </div>
 
-              {isAdmin && (
+              {(isAdmin || isEditor) && (
                 <button 
                   onClick={() => { setView('settings'); setIsProfileOpen(false); }}
                   className="w-full flex items-center justify-between p-6 bg-white/5 hover:bg-[#A3E635]/10 rounded-3xl border border-white/5 transition-all group"
