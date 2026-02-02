@@ -6,7 +6,7 @@ import { APP_NAME, STORAGE_KEY, DEPLOY_NODE } from '../constants';
 import { supabase } from '../lib/supabase';
 
 interface LoginProps {
-  onLogin: (email: string, password: string) => Promise<boolean>;
+  onLogin: (email: string, password: string) => Promise<boolean | string>;
   language: Language;
   t: (key: string) => string;
 }
@@ -64,11 +64,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
     const finalPass = cleanInput(passRef.current?.value || password);
 
     try {
-      const ok = await onLogin(finalEmail, finalPass);
-      if (ok) {
+      const result = await onLogin(finalEmail, finalPass);
+      if (result === true) {
         setError('');
       } else {
-        setError(t('login_failed'));
+        setError(typeof result === 'string' ? result : t('login_failed'));
       }
     } catch (err: any) {
       setError(err?.message || t('connection_failed'));

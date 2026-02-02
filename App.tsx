@@ -479,16 +479,16 @@ const App: React.FC = () => {
     await fetchFromCloud(true);
   };
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<true | string> => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return false;
-    if (!data.session?.user) return false;
+    if (error) return error.message || t('login_failed');
+    if (!data.session?.user) return t('login_failed');
     const { data: profile } = await supabase
       .from('users')
       .select('id, username, email, role')
       .eq('auth_user_id', data.session.user.id)
       .single();
-    if (!profile) return false;
+    if (!profile) return t('login_profile_not_found');
     setState((prev) => ({
       ...prev,
       currentUser: {

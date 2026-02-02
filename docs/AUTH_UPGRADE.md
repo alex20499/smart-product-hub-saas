@@ -53,8 +53,20 @@ supabase/migrations/20260101000000_auth_and_rls.sql
 
 若在升级前或通过其他方式添加的用户无法登录，可运行 `node scripts/seed-auth-users.js` 将 `public.users` 中未关联的用户同步到 Auth。
 
+### 7. 默认账号无法登录时（一键修复）
+
+若使用 `admin@example.com` / `password` 仍提示「ID或密钥不匹配」或「Invalid login credentials」：
+
+1. 确保 `.env` 中配置的是**云端使用的** Supabase：`SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`
+2. 在项目根目录执行：
+   ```bash
+   node scripts/ensure-default-auth.js
+   ```
+3. 脚本会：若 `public.users` 中无 admin/editor/viewer 则插入；为所有未关联用户创建 Supabase Auth 账号并关联
+4. 再次用 `admin@example.com` / `password` 登录
+
 ## 故障排查
 
-- **登录失败**：确认已执行迁移并运行 `seed-auth-users.js`（历史用户），或通过 UI 新建用户（会自动创建 Auth 账号）
+- **登录失败**：先运行 `node scripts/ensure-default-auth.js` 确保默认账号存在并已关联 Auth；或运行 `seed-auth-users.js`（仅补关联已有用户）；或通过 UI 新建用户（会自动创建 Auth 账号）
 - **RLS 拒绝**：确认用户已通过 Supabase Auth 登录，JWT 有效
 - **无数据**：确认当前用户的 `get_my_role()` 返回正确角色
