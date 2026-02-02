@@ -64,10 +64,10 @@ export default defineConfig(({ mode }) => {
         }] : [])
       ],
       define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY),
+        // Supabase 配置仍需注入前端（公开信息，非敏感）
         'process.env.SUPABASE_URL': JSON.stringify(env.SUPABASE_URL),
         'process.env.SUPABASE_ANON_KEY': JSON.stringify(env.SUPABASE_ANON_KEY)
+        // GEMINI_API_KEY 不再注入前端，通过 /api/gemini 服务端代理访问
       },
       resolve: {
         alias: {

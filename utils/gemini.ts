@@ -1,7 +1,10 @@
 /**
  * 调用 Gemini API
- * 开发环境：通过 Vite 代理 /api/gemini，密钥保留在服务端
- * 生产环境：直接调用（需在部署平台配置 GEMINI_API_KEY）
+ * 
+ * 开发环境：通过 Vite 代理 /api/gemini
+ * 生产环境：通过 Vercel Serverless Function /api/gemini
+ * 
+ * 密钥始终保留在服务端，前端不接触 API Key
  */
 const MODEL = 'gemma-3-4b-it';
 
@@ -35,38 +38,35 @@ function extractText(data: any): string {
   return '';
 }
 
+/**
+ * 调用 Gemini API（通过服务端代理）
+ * 
+ * 前端始终请求 /api/gemini，由服务端代理转发到 Google API
+ * - 开发环境：Vite 中间件代理
+ * - 生产环境：Vercel Serverless Function
+ */
 export async function callGemini(prompt: string): Promise<string> {
   const contents = [{ parts: [{ text: prompt }] }];
 
-  if (import.meta.env.DEV) {
-    const res = await fetch('/api/gemini', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: MODEL, contents })
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 404)
-      throw new Error('请在 .env 中配置 GEMINI_API_KEY 并重启开发服务器');
-    if (!res.ok) throw new Error(data?.error?.message || `状态码: ${res.status}`);
-    const text = extractText(data);
-    if (!text) throw new Error('AI 返回为空，请稍后重试或简化输入');
-    return text;
-  }
-
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('请在环境变量中配置 GEMINI_API_KEY');
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
-  const res = await fetch(url, {
+  const res = await fetch('/api/gemini', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents,
-      generationConfig: { temperature: 0.7, maxOutputTokens: 2048, topP: 0.95 }
-    })
+    body: JSON.stringify({ model: MODEL, contents })
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || `状态码: ${res.status}`);
+
+  const data = await res.json().catch(() => ({}));
+
+  if (res.status === 404) {
+    throw new Error('AI 服务不可用，请检查服务端配置');
+  }
+  if (!res.ok) {
+    throw new Error(data?.error?.message || `AI 请求失败: ${res.status}`);
+  }
+
   const text = extractText(data);
-  if (!text) throw new Error('AI 返回为空，请稍后重试或简化输入');
+  if (!text) {
+    throw new Error('AI 返回为空，请稍后重试或简化输入');
+  }
+
   return text;
 }
