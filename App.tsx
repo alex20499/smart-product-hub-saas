@@ -240,6 +240,7 @@ const App: React.FC = () => {
 
   const handleProductAdd = async (data: any) => {
     setIsSyncing(true);
+    console.log('[Product Add] 开始');
     try {
       const { categoryId, ...restData } = data;
       let mainImage = restData.mainImage || '';
@@ -308,31 +309,42 @@ const App: React.FC = () => {
         ...fixedFields,
         attributes
       };
+      console.log('[Product Add] payload 已构建, categoryId:', categoryId);
 
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      if (!token) throw new Error('请先登录');
+      if (!token) {
+        console.error('[Product Add] 无 token，请先登录');
+        throw new Error('请先登录');
+      }
+      console.log('[Product Add] 请求 /api/create-product');
       const API_TIMEOUT_MS = 95000;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-      const res = await fetch('/api/create-product', {
+      let res: Response;
+      try {
+        res = await fetch('/api/create-product', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ payload }),
         signal: controller.signal,
       });
-      clearTimeout(timeoutId);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      console.log('[Product Add] 响应 status=', res.status);
       const json = await res.json().catch(() => ({}));
       const error = res.ok ? null : { message: json?.error?.message || t('add_product_failed'), code: json?.error?.code || 'ADD_ERROR' };
       if (error) {
-        console.error('[Product Add] API error:', res.status, error.message, payload);
+        console.error('[Product Add] API 失败:', res.status, error.message);
         setDiagnostic({ msg: error.message, code: error.code });
         throw new Error(error.message);
       }
       // 同步列表在后台执行，避免长时间等待导致“请求超时”
+      console.log('[Product Add] 成功');
       fetchFromCloud(true).catch(() => {});
     } catch (err: any) {
-      console.error('Product add error:', err);
+      console.error('[Product Add] 异常:', err?.name, err?.message);
       const msg = err?.name === 'AbortError' ? t('save_timeout') : (err?.message || t('add_product_failed'));
       setDiagnostic({ msg, code: 'ADD_ERROR' });
       throw new Error(msg);
