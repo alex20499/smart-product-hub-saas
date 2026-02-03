@@ -311,8 +311,23 @@ const App: React.FC = () => {
       };
       console.log('[Product Add] payload 已构建, categoryId:', categoryId);
 
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      const SESSION_TIMEOUT_MS = 8000;
+      const sessionPromise = supabase.auth.getSession();
+      const sessionTimeout = new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error('SESSION_TIMEOUT')), SESSION_TIMEOUT_MS)
+      );
+      let session: { data: { session: { access_token?: string } | null } };
+      try {
+        session = await Promise.race([sessionPromise, sessionTimeout]);
+      } catch (e: any) {
+        if (e?.message === 'SESSION_TIMEOUT') {
+          console.error('[Product Add] getSession 超时');
+          setDiagnostic({ msg: '获取登录状态超时，请检查网络或刷新重试', code: 'SESSION_TIMEOUT' });
+          throw new Error('获取登录状态超时，请检查网络或刷新重试');
+        }
+        throw e;
+      }
+      const token = session?.data?.session?.access_token;
       if (!token) {
         console.error('[Product Add] 无 token，请先登录');
         throw new Error('请先登录');

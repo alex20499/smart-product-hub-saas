@@ -62,8 +62,22 @@ const MultiQuantityInput: React.FC<{ options: string[]; value: Record<string, nu
 const StarRatingInput: React.FC<{ value: number | string; onChange: (val: number) => void }> = ({ value, onChange }) => {
   const num = typeof value === 'number' ? value : parseFloat(String(value)) || 0;
   const v = Math.min(5, Math.max(0, num));
+  const [localStr, setLocalStr] = useState<string | null>(null);
+  const isEditing = localStr !== null;
+  const displayVal = isEditing ? localStr : (v || 0).toFixed(2);
+
+  const commitAndBlur = () => {
+    if (localStr === null) return;
+    const x = parseFloat(String(localStr).replace(/,/g, ''));
+    if (!isNaN(x)) {
+      const clamped = Math.min(5, Math.max(0, x));
+      onChange(Number(clamped.toFixed(2)));
+    }
+    setLocalStr(null);
+  };
+
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <div className="flex items-center gap-1">
         {[1, 2, 3, 4, 5].map((n) => (
           <button
@@ -78,7 +92,17 @@ const StarRatingInput: React.FC<{ value: number | string; onChange: (val: number
         ))}
       </div>
       <button type="button" onClick={() => onChange(0)} className="text-[9px] text-slate-500 hover:text-slate-400 font-black px-2 py-1 rounded border border-white/5">—</button>
-      <input type="number" min="0" max="5" step="0.01" value={v || ''} onChange={e => { const x = parseFloat(e.target.value); if (!isNaN(x)) onChange(x); }} className="w-12 bg-slate-950 border border-white/5 rounded-lg px-2 py-1 text-[10px] font-black text-center text-[#A3E635] outline-none focus:border-[#A3E635]/40" placeholder="0-5" />
+      <input
+        type="text"
+        inputMode="decimal"
+        value={displayVal}
+        onFocus={() => setLocalStr((v || 0).toFixed(2))}
+        onChange={e => setLocalStr(e.target.value)}
+        onBlur={commitAndBlur}
+        onKeyDown={e => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
+        className="min-w-[4.25rem] w-[4.25rem] bg-slate-950 border border-white/5 rounded-lg px-2 py-1 text-[11px] font-black text-center text-[#A3E635] outline-none focus:border-[#A3E635]/40 tabular-nums"
+        placeholder="0.00"
+      />
     </div>
   );
 };
@@ -330,13 +354,10 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
     setSelectedProduct(null);
     setIsEditingProduct(false);
     setEditFormData({});
-    setAiAnalysis(null);
-    setIsAiAnalyzing(false);
-    setCompetitorAnalysis(null);
-    setIsCompetitorAnalyzing(false);
   };
   
   const handleEditProduct = () => {
+    if (!selectedProduct) return;
     setIsEditingProduct(true);
     setEditFormData({
       ...selectedProduct,
@@ -348,13 +369,26 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       rawReview: selectedProduct?.attributes?.raw_review || '',
       insightSummary: selectedProduct?.attributes?.insight_summary || ''
     });
-    // 滚动到编辑区域
     setTimeout(() => {
       const editSection = document.getElementById('product-edit-section');
-      if (editSection) {
-        editSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
+      if (editSection) editSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
+  };
+
+  const handleOpenProductForEdit = (p: ProductData) => {
+    setSelectedProduct(p);
+    setIsDrawerOpen(true);
+    setEditFormData({
+      ...p,
+      linkUrl: p?.linkUrl || (p as any)?.attributes?.link_url || '',
+      mainImage: p?.mainImage || (p as any)?.attributes?.mainImage || (p as any)?.attributes?.main_image || '',
+      sellingPoints: (p as any)?.attributes?.selling_points || [],
+      pros: (p as any)?.attributes?.pros || '',
+      cons: (p as any)?.attributes?.cons || '',
+      rawReview: (p as any)?.attributes?.raw_review || '',
+      insightSummary: (p as any)?.attributes?.insight_summary || ''
+    });
+    setIsEditingProduct(true);
   };
   
   const handleSaveProduct = () => {
@@ -667,6 +701,14 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                                     </button>
                                     {canEdit && (
                                       <button 
+                                        onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); handleOpenProductForEdit(p); }} 
+                                        className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:text-[#A3E635] flex items-center gap-2"
+                                      >
+                                        <Edit2 size={14} /> {t('modify')}
+                                      </button>
+                                    )}
+                                    {canEdit && (
+                                      <button 
                                         onClick={() => handleDeleteFromList(p.id, p.model || p.brand || t('product_item'))} 
                                         className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-500/10 flex items-center gap-2"
                                       >
@@ -701,6 +743,11 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
               <button onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); handleProductClick(p); }} className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2">
                 <Eye size={14} /> {t('view_detail')}
               </button>
+              {canEdit && (
+                <button onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); handleOpenProductForEdit(p); }} className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:text-[#A3E635] flex items-center gap-2">
+                  <Edit2 size={14} /> {t('modify')}
+                </button>
+              )}
               {canEdit && (
                 <button onClick={() => handleDeleteFromList(p.id, p.model || p.brand || t('product_item'))} className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-500/10 flex items-center gap-2">
                   <Trash2 size={14} /> {t('delete')}
@@ -903,7 +950,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                             </div>
                          </div>
                          
-                         <div className="space-y-3">
+                         <div className="space-y-3 md:col-span-2">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
                                {t('rating_label')}
                             </label>
@@ -1390,7 +1437,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                         />
                       </div>
                       
-                      <div className="space-y-3">
+                      <div className="space-y-3 md:col-span-2">
                         <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('rating')}</label>
                         <StarRatingInput value={editFormData.rating ?? ''} onChange={(val) => setEditFormData({...editFormData, rating: val})} />
                       </div>
@@ -1519,49 +1566,53 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                   </div>
                 )}
                 
-                {/* Action Buttons */}
-                <div className="flex gap-4">
-                  {canEdit && (
+                {/* Action Buttons - 编辑时：保存 | 取消编辑 | 删除 | 关闭；非编辑：修改 | 删除 | 关闭 */}
+                <div className="flex flex-wrap gap-4">
+                  {canEdit && isEditingProduct && (
                     <button
-                      onClick={handleEditProduct}
-                      className="flex-1 bg-slate-900 border border-white/10 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
+                      onClick={handleSaveProduct}
+                      className="flex-1 min-w-[140px] bg-green-600 border border-green-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-green-700 transition-all flex items-center justify-center gap-3"
                     >
-                      <Edit2 size={18} />
-                      {t('modify')}
+                      <Check size={18} />
+                      {t('save_changes')}
                     </button>
                   )}
-                  
+                  {canEdit && (
+                    isEditingProduct ? (
+                      <button
+                        onClick={() => { setIsEditingProduct(false); setEditFormData({}); }}
+                        className="flex-1 min-w-[140px] bg-slate-800 border border-white/10 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-slate-700 transition-all flex items-center justify-center gap-3"
+                      >
+                        <X size={18} />
+                        {t('cancel_edit')}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleEditProduct}
+                        className="flex-1 min-w-[140px] bg-slate-900 border border-white/10 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
+                      >
+                        <Edit2 size={18} />
+                        {t('modify')}
+                      </button>
+                    )
+                  )}
                   {canEdit && (
                     <button
                       onClick={() => handleDeleteProduct(selectedProduct.id, `${selectedProduct.brand} ${selectedProduct.model}`)}
-                      className="flex-1 bg-red-600 border border-red-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3"
+                      className="flex-1 min-w-[140px] bg-red-600 border border-red-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3"
                     >
                       <Trash2 size={18} />
                       {t('delete')}
                     </button>
                   )}
-                  
                   <button
                     onClick={handleCloseDrawer}
-                    className="flex-1 bg-slate-900 border border-white/10 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
+                    className="flex-1 min-w-[140px] bg-slate-900 border border-white/10 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
                   >
                     <X size={18} />
                     {t('close')}
                   </button>
                 </div>
-                
-                {/* Save Button - 只在编辑模式下显示 */}
-                {isEditingProduct && (
-                  <div className="flex justify-center pt-6 border-t border-white/5">
-                    <button
-                      onClick={handleSaveProduct}
-                      className="bg-green-600 border border-green-500/30 text-white px-12 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-green-700 transition-all flex items-center justify-center gap-3"
-                    >
-                      <Check size={18} />
-                      {t('save_changes')}
-                    </button>
-                  </div>
-                )}
                 
                 {/* External Link - 删除重复部分 */}
               </div>

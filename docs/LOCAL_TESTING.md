@@ -9,9 +9,9 @@
    ```bash
    cp .env.example .env
    ```
-3. **编辑 `.env`**，填入你的 Supabase 配置：
-   - `SUPABASE_URL`：Supabase 项目 URL（Dashboard → Project Settings → API）
-   - `SUPABASE_ANON_KEY`：anon public key
+3. **编辑 `.env`**，填入你的 Supabase 配置（**变量名必须一致，值不要有多余空格**）：
+   - `SUPABASE_URL`：项目 URL（Dashboard → API → Project URL），如 `https://xxx.supabase.co`
+   - `SUPABASE_ANON_KEY`：anon public / Publishable key（Dashboard → API → anon public），格式为 `eyJ...` 或 `sb_publishable_...`
    - `SUPABASE_SERVICE_ROLE_KEY`：service_role key（用于本地 /api/create-user、/api/create-product 等代理）
 
 没有 `SUPABASE_SERVICE_ROLE_KEY` 时，添加产品会走服务端 API；本地代理需要它才能模拟服务端插入。
@@ -44,6 +44,7 @@ npm run dev
 
 若卡在某一步或出现错误：
 
+- **只有「payload 已构建」且无「请求 /api/create-product」**：多半是 `getSession()` 未返回。请确认 `.env` 中变量名为 `SUPABASE_URL`、`SUPABASE_ANON_KEY`（不要用别的名字），值无多余空格；刷新页面后若控制台有 `[Supabase] 配置缺失`，说明未正确加载。
 - **无 token**：先重新登录
 - **响应 status= 401/403**：检查登录状态或 service role 配置
 - **响应 status= 408 或 500**：服务端超时或报错，看终端里 Vite 代理日志
