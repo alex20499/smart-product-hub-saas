@@ -28,7 +28,9 @@ function getExtension(mime: string): string {
   return map[mime] || 'jpg';
 }
 
-export async function uploadImageToStorage(value: string): Promise<string> {
+export type UploadImageOptions = { signal?: AbortSignal };
+
+export async function uploadImageToStorage(value: string, options?: UploadImageOptions): Promise<string> {
   if (!value?.trim()) return '';
   const v = value.trim();
 
@@ -56,18 +58,20 @@ export async function uploadImageToStorage(value: string): Promise<string> {
     return data.publicUrl;
   }
 
-  // 外部 URL：通过 API 拉取并上传（需传入 token）
+  // 外部 URL：通过 API 拉取并上传（需传入 token，可选 signal 用于取消/超时）
   if (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('//')) {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
     if (!token) throw new Error('请先登录');
-    const res = await fetch('/api/upload-image-from-url', {
+    const fetchOpts: RequestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({
         url: v.startsWith('//') ? 'https:' + v : v,
       }),
-    });
+    };
+    if (options?.signal) fetchOpts.signal = options.signal;
+    const res = await fetch('/api/upload-image-from-url', fetchOpts);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data?.error?.message || '上传失败');
     if (!data?.url) throw new Error('未返回图片地址');

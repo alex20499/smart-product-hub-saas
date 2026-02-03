@@ -83,25 +83,39 @@ const StarRatingInput: React.FC<{ value: number | string; onChange: (val: number
   );
 };
 
+const UPLOAD_TIMEOUT_MS = 25000;
+
 const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; placeholder?: string; t: (key: string) => string }> = ({ value, onChange, t }) => {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const doUpload = async (val: string, showPreviewFirst = false) => {
     if (!val?.trim()) return;
     setUploading(true);
     setUploadError(null);
     if (showPreviewFirst) onChange(val);
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const timeoutId = setTimeout(() => ac.abort(), UPLOAD_TIMEOUT_MS);
     try {
       const { uploadImageToStorage } = await import('../utils/uploadImage');
-      const url = await uploadImageToStorage(val);
+      const isExternal = val.trim().startsWith('http://') || val.trim().startsWith('https://') || val.trim().startsWith('//');
+      const url = await uploadImageToStorage(val, isExternal ? { signal: ac.signal } : undefined);
       onChange(url);
     } catch (err: any) {
-      setUploadError(err?.message || t('upload_failed'));
+      const msg = err?.name === 'AbortError' ? t('upload_cancelled') : (err?.message || t('upload_failed'));
+      setUploadError(msg);
       if (showPreviewFirst) onChange(val);
     } finally {
+      clearTimeout(timeoutId);
+      abortRef.current = null;
       setUploading(false);
     }
+  };
+
+  const handleCancelUpload = () => {
+    abortRef.current?.abort();
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -117,7 +131,7 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
     e.target.value = '';
   };
 
-  const handlePaste = async (e: React.ClipboardEvent) => {
+  const handlePaste = (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
     for (const item of Array.from(items)) {
@@ -140,7 +154,8 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
       e.preventDefault();
       const url = text.startsWith('//') ? 'https:' + text : text;
       onChange(url);
-      await doUpload(url);
+      setUploadError(null);
+      // 粘贴链接不再自动上传，仅显示预览。用户可点「保存到云端」或直接「保存」
     }
   };
 
@@ -177,11 +192,19 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
             <div className="relative w-full h-28 rounded-xl overflow-hidden shadow-inner bg-slate-950">
               <img src={value} className="w-full h-full object-contain p-2" alt="Preview" />
               {uploading && (
-                <div className="absolute inset-0 bg-slate-950/80 flex items-center justify-center">
+                <div className="absolute inset-0 bg-slate-950/80 flex flex-col items-center justify-center gap-3">
                   <span className="text-[10px] font-black uppercase text-[#A3E635] flex items-center gap-2">
                     <RefreshCw size={14} className="animate-spin" />
                     {t('image_uploading')}
                   </span>
+                  <p className="text-[9px] text-slate-400 max-w-[200px] text-center">{t('save_with_link_hint')}</p>
+                  <button
+                    type="button"
+                    onClick={handleCancelUpload}
+                    className="px-3 py-1.5 text-[9px] font-black uppercase border border-slate-500 rounded-lg text-slate-400 hover:border-red-500/50 hover:text-red-400 transition-colors"
+                  >
+                    {t('cancel_upload')}
+                  </button>
                 </div>
               )}
               {!uploading && (
