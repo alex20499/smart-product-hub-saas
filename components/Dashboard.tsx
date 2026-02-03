@@ -231,7 +231,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
             <Globe size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-hover:text-[#A3E635] transition-colors" />
             <select 
               value={selectedChannel}
-              onChange={(e) => { setSelectedChannel(e.target.value); setVisibleProducts(5); setGlobalAiAnalysis(null); }}
+              onChange={(e) => { setSelectedChannel(e.target.value); setVisibleProducts(5); }}
               className="bg-slate-900 border border-white/5 rounded-2xl pl-12 pr-10 py-3 lg:py-4 text-[10px] lg:text-[11px] font-black uppercase text-white tracking-widest outline-none focus:border-[#A3E635]/40 appearance-none min-w-[140px] lg:min-w-[160px] cursor-pointer"
             >
               <option value="all">{t('global_channels')}</option>
