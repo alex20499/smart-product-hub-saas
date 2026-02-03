@@ -246,9 +246,15 @@ const App: React.FC = () => {
       if (mainImage.startsWith('data:image/')) {
         try {
           const { uploadImageToStorage } = await import('./utils/uploadImage');
-          mainImage = await uploadImageToStorage(mainImage);
+          const UPLOAD_TIMEOUT_MS = 45000;
+          mainImage = await Promise.race([
+            uploadImageToStorage(mainImage),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error(t('save_timeout'))), UPLOAD_TIMEOUT_MS)),
+          ]);
         } catch (e) {
           console.warn('主图 base64 上传失败，将尝试原样保存:', e);
+          setDiagnostic({ msg: (e as Error)?.message || t('upload_failed'), code: 'UPLOAD_ERROR' });
+          throw e;
         }
       }
       const now = new Date().toISOString();
@@ -333,9 +339,15 @@ const App: React.FC = () => {
       if (mainImage.startsWith('data:image/')) {
         try {
           const { uploadImageToStorage } = await import('./utils/uploadImage');
-          mainImage = await uploadImageToStorage(mainImage);
+          const UPLOAD_TIMEOUT_MS = 45000;
+          mainImage = await Promise.race([
+            uploadImageToStorage(mainImage),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error(t('save_timeout'))), UPLOAD_TIMEOUT_MS)),
+          ]);
         } catch (e) {
           console.warn('主图 base64 上传失败:', e);
+          setDiagnostic({ msg: (e as Error)?.message || t('upload_failed'), code: 'UPLOAD_ERROR' });
+          throw e;
         }
       }
       const now = new Date().toISOString();

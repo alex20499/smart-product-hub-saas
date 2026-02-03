@@ -87,16 +87,18 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const doUpload = async (val: string) => {
+  const doUpload = async (val: string, showPreviewFirst = false) => {
     if (!val?.trim()) return;
     setUploading(true);
     setUploadError(null);
+    if (showPreviewFirst) onChange(val);
     try {
       const { uploadImageToStorage } = await import('../utils/uploadImage');
       const url = await uploadImageToStorage(val);
       onChange(url);
     } catch (err: any) {
       setUploadError(err?.message || t('upload_failed'));
+      if (showPreviewFirst) onChange(val);
     } finally {
       setUploading(false);
     }
@@ -108,7 +110,7 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
       const reader = new FileReader();
       reader.onload = async (event) => {
         const dataUrl = event.target?.result as string;
-        if (dataUrl) await doUpload(dataUrl);
+        if (dataUrl) await doUpload(dataUrl, true);
       };
       reader.readAsDataURL(file);
     }
@@ -126,7 +128,7 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
           const reader = new FileReader();
           reader.onload = async (ev) => {
             const dataUrl = ev.target?.result as string;
-            if (dataUrl) await doUpload(dataUrl);
+            if (dataUrl) await doUpload(dataUrl, true);
           };
           reader.readAsDataURL(file);
         }
@@ -170,13 +172,23 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
       </div>
       {uploadError && <p className="text-[9px] text-red-400 font-medium">{uploadError}</p>}
       <div className="relative group">
-        <div className={`w-full min-h-[120px] bg-slate-900/50 border-2 border-dashed rounded-2xl transition-all flex flex-col items-center justify-center p-4 gap-2 ${value ? 'border-[#A3E635]/30' : 'border-white/5 hover:border-[#A3E635]/40 hover:bg-slate-800/50'} ${uploading ? 'opacity-60 pointer-events-none' : ''}`}>
+        <div className={`w-full min-h-[120px] bg-slate-900/50 border-2 border-dashed rounded-2xl transition-all flex flex-col items-center justify-center p-4 gap-2 ${value ? 'border-[#A3E635]/30' : 'border-white/5 hover:border-[#A3E635]/40 hover:bg-slate-800/50'}`}>
           {value ? (
             <div className="relative w-full h-28 rounded-xl overflow-hidden shadow-inner bg-slate-950">
               <img src={value} className="w-full h-full object-contain p-2" alt="Preview" />
-              <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
-                <button type="button" onClick={() => onChange('')} className="p-2 bg-red-500/20 text-red-400 rounded-xl border border-red-500/30 hover:bg-red-500 hover:text-white transition-all"><Trash2 size={14} /></button>
-              </div>
+              {uploading && (
+                <div className="absolute inset-0 bg-slate-950/80 flex items-center justify-center">
+                  <span className="text-[10px] font-black uppercase text-[#A3E635] flex items-center gap-2">
+                    <RefreshCw size={14} className="animate-spin" />
+                    {t('image_uploading')}
+                  </span>
+                </div>
+              )}
+              {!uploading && (
+                <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                  <button type="button" onClick={() => onChange('')} className="p-2 bg-red-500/20 text-red-400 rounded-xl border border-red-500/30 hover:bg-red-500 hover:text-white transition-all"><Trash2 size={14} /></button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-center">
@@ -184,7 +196,7 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{t('or_upload_local')}</p>
             </div>
           )}
-          <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" disabled={uploading} />
+          <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" disabled={uploading} style={{ pointerEvents: uploading ? 'none' : undefined }} />
         </div>
       </div>
     </div>
