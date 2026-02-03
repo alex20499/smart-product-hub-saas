@@ -5,13 +5,12 @@ import {
   Plus, Trash2, X, Package, Edit2, 
   Image as ImageIcon, Check, LayoutGrid, ChevronDown, 
   ExternalLink, ArrowLeft, Star, Search,
-  Sparkles, RefreshCw, Zap, Database, Globe, Tag, 
+  RefreshCw, Zap, Database, Globe, Tag, 
   Layout, Layers, Trophy, List, Filter, Eye, MoreHorizontal, Settings,
-  ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, AlertTriangle, Brain
+  ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, AlertTriangle
 } from 'lucide-react';
 import { ProductData, ProductField, FieldType, User, Category } from '../types';
 import { DEFAULT_CHANNEL_OPTIONS } from '../constants';
-import { callGemini, simplifyForAI } from '../utils/gemini';
 
 interface ProductInventoryProps {
   products: ProductData[];
@@ -85,11 +84,32 @@ const StarRatingInput: React.FC<{ value: number | string; onChange: (val: number
 };
 
 const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; placeholder?: string; t: (key: string) => string }> = ({ value, onChange, t }) => {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const doUpload = async (val: string) => {
+    if (!val?.trim()) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const { uploadImageToStorage } = await import('../utils/uploadImage');
+      const url = await uploadImageToStorage(val);
+      onChange(url);
+    } catch (err: any) {
+      setUploadError(err?.message || t('upload_failed'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => onChange(event.target?.result as string);
+      reader.onload = async (event) => {
+        const dataUrl = event.target?.result as string;
+        if (dataUrl) await doUpload(dataUrl);
+      };
       reader.readAsDataURL(file);
     }
     e.target.value = '';
@@ -104,7 +124,10 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
         const file = item.getAsFile();
         if (file) {
           const reader = new FileReader();
-          reader.onload = (ev) => onChange(ev.target?.result as string);
+          reader.onload = async (ev) => {
+            const dataUrl = ev.target?.result as string;
+            if (dataUrl) await doUpload(dataUrl);
+          };
           reader.readAsDataURL(file);
         }
         return;
@@ -113,24 +136,41 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
     const text = e.clipboardData?.getData('text');
     if (text && (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('//'))) {
       e.preventDefault();
-      onChange(text.startsWith('//') ? 'https:' + text : text);
+      const url = text.startsWith('//') ? 'https:' + text : text;
+      onChange(url);
+      await doUpload(url);
     }
   };
 
+  const isExternalUrl = value && (value.startsWith('http://') || value.startsWith('https://')) && !value.includes('/storage/v1/object/public/product-images/');
   const showInInput = value && (value.startsWith('http://') || value.startsWith('https://'));
 
   return (
     <div className="space-y-3" onPaste={handlePaste}>
-      <input
-        type="url"
-        className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner placeholder:text-slate-600"
-        placeholder={t('main_image_paste_hint')}
-        value={showInInput ? value : ''}
-        title={showInInput ? value : undefined}
-        onChange={e => onChange(e.target.value.trim())}
-      />
+      <div className="flex gap-2">
+        <input
+          type="url"
+          className="flex-1 bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner placeholder:text-slate-600"
+          placeholder={t('main_image_paste_hint')}
+          value={showInInput ? value : ''}
+          title={showInInput ? value : undefined}
+          onChange={e => { setUploadError(null); onChange(e.target.value.trim()); }}
+          disabled={uploading}
+        />
+        {isExternalUrl && (
+          <button
+            type="button"
+            onClick={() => doUpload(value)}
+            disabled={uploading}
+            className="px-4 py-2.5 bg-[#A3E635] text-slate-950 rounded-xl font-black text-[9px] uppercase tracking-widest hover:opacity-90 disabled:opacity-50 shrink-0"
+          >
+            {uploading ? '...' : t('upload_to_cloud')}
+          </button>
+        )}
+      </div>
+      {uploadError && <p className="text-[9px] text-red-400 font-medium">{uploadError}</p>}
       <div className="relative group">
-        <div className={`w-full min-h-[120px] bg-slate-900/50 border-2 border-dashed rounded-2xl transition-all flex flex-col items-center justify-center p-4 gap-2 ${value ? 'border-[#A3E635]/30' : 'border-white/5 hover:border-[#A3E635]/40 hover:bg-slate-800/50'}`}>
+        <div className={`w-full min-h-[120px] bg-slate-900/50 border-2 border-dashed rounded-2xl transition-all flex flex-col items-center justify-center p-4 gap-2 ${value ? 'border-[#A3E635]/30' : 'border-white/5 hover:border-[#A3E635]/40 hover:bg-slate-800/50'} ${uploading ? 'opacity-60 pointer-events-none' : ''}`}>
           {value ? (
             <div className="relative w-full h-28 rounded-xl overflow-hidden shadow-inner bg-slate-950">
               <img src={value} className="w-full h-full object-contain p-2" alt="Preview" />
@@ -144,7 +184,7 @@ const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; pla
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{t('or_upload_local')}</p>
             </div>
           )}
-          <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+          <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" disabled={uploading} />
         </div>
       </div>
     </div>
@@ -173,15 +213,13 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   const [isEditingProduct, setIsEditingProduct] = useState(false);
   const [editFormData, setEditFormData] = useState<Record<string, any>>({});
   
-  // AI分析状态
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
-  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
-  
-  // AI竞品对策状态
-  const [competitorAnalysis, setCompetitorAnalysis] = useState<string | null>(null);
-  const [isCompetitorAnalyzing, setIsCompetitorAnalyzing] = useState(false);
   const [actionsOpenId, setActionsOpenId] = useState<string | null>(null);
   const [actionsAnchorRect, setActionsAnchorRect] = useState<DOMRect | null>(null);
+
+  const [pasteParseError, setPasteParseError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const CORE_FORM_KEYS = ['brand', 'model', 'channel', 'shopName', 'linkUrl', 'price', 'actualPrice', 'monthlySales', 'rating', 'mainImage'];
 
   const canEdit = currentUser.role === 'admin' || currentUser.role === 'editor';
   const channels = useMemo(() => Array.from(new Set(products.map(p => p?.channel).filter(Boolean))).sort(), [products]);
@@ -231,7 +269,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
 
   const handleCloseModal = () => {
     setIsAddModalOpen(false); setEditingId(null); setSelectedCatForAdd(null); setFormData({});
-    // 关闭时滚动回顶部
+    setPasteParseError(null); setIsSaving(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   
@@ -361,56 +399,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
     }
   };
   
-  // AI分析函数 - 开发环境走代理，密钥在服务端
-  const handleProductAIAnalysis = async (product: ProductData) => {
-    setIsAiAnalyzing(true);
-    setAiAnalysis(null);
-    try {
-      const simple = simplifyForAI(product as Record<string, unknown>);
-      const prompt = `你是一位专业的产品分析师。请分析此单品：${JSON.stringify(simple)}。请给出1条实战销售战术，语言精炼，直接输出建议即可。`;
-      const aiText = await callGemini(prompt);
-      setAiAnalysis(aiText || t('ai_response_empty'));
-      if (aiText) console.log('✅ AI 分析成功');
-    } catch (e: any) {
-      console.error('🚨 AI分析失败:', e.message);
-      setAiAnalysis(`${t('ai_analysis_interrupted')}: ${e.message}`);
-    } finally {
-      setIsAiAnalyzing(false);
-    }
-  };
-  
-  // AI竞品对策函数 - 开发环境走代理，密钥在服务端
-  const handleCompetitorAnalysis = async (product: ProductData) => {
-    setIsCompetitorAnalyzing(true);
-    setCompetitorAnalysis(null);
-    try {
-      const competitorInfo = {
-        name: product.model,
-        brand: product.brand,
-        price: product.price,
-        channel: product.channel,
-        selling_points: product.attributes?.selling_points || [],
-        pros: product.attributes?.pros || '',
-        cons: product.attributes?.cons || '',
-        painPoints: {
-          cons: product.attributes?.cons || '',
-          raw_review: product.attributes?.raw_review || '',
-          pros: product.attributes?.pros || ''
-        }
-      };
-      
-      const prompt = `你是一位高级产品经理，请深度分析以下竞品信息：${JSON.stringify(competitorInfo)}。请以专业、简洁、可执行的方式回答，重点关注如何利用竞品弱点获得市场优势。`;
-      const text = await callGemini(prompt);
-      setCompetitorAnalysis(text);
-    } catch (error: any) {
-      console.error('AI竞品对策错误:', error);
-      setCompetitorAnalysis(error?.message ? `${t('ai_analysis_interrupted')}: ${error.message}` : t('ai_competitor_blocked'));
-    } finally {
-      setIsCompetitorAnalyzing(false);
-    }
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCategory) return;
     if (!formData.brand?.trim()) {
@@ -426,8 +415,19 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       return;
     }
     const finalData = { ...formData, categoryId: activeCategory.id };
-    if (editingId) onUpdate(editingId, finalData); else onAdd(finalData);
-    handleCloseModal();
+    setIsSaving(true);
+    setPasteParseError(null);
+    try {
+      if (editingId) await onUpdate(editingId, finalData); else await onAdd(finalData);
+      handleCloseModal();
+    } catch (err: any) {
+      const raw = (err?.message || '').toLowerCase();
+      const isTimeout = raw.includes('timeout') || raw.includes('超时') || raw.includes('timed out');
+      const msg = err?.name === 'AbortError' ? t('save_aborted') : (isTimeout ? t('save_timeout') : (err?.message || t('add_product_failed')));
+      setPasteParseError(msg);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const renderFieldInput = (field: ProductField) => {
@@ -938,12 +938,13 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                    )}
                    
                    <div className="pt-10 border-t border-white/5 flex flex-col gap-4 pb-10">
+                      {pasteParseError && <p className="text-[10px] text-red-400 font-medium">{pasteParseError}</p>}
                       <button 
                         type="submit" 
-                        className="w-full py-5 bg-white text-slate-950 rounded-2xl font-black text-[11px] uppercase tracking-[0.4em] shadow-xl hover:bg-[#A3E635] transition-all active:scale-95 flex items-center justify-center gap-3"
+                        disabled={isSaving}
+                        className="w-full py-5 bg-white text-slate-950 rounded-2xl font-black text-[11px] uppercase tracking-[0.4em] shadow-xl hover:bg-[#A3E635] transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed"
                       >
-                        <Check size={18} />
-                        {t('add_info')}
+                        {isSaving ? <><RefreshCw size={18} className="animate-spin" /> {t('syncing')}</> : <><Check size={18} /> {t('add_info')}</>}
                       </button>
                       <button 
                         type="button" 
@@ -1275,76 +1276,6 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       <ExternalLink size={18} />
                       {t('visit_source_link')}
                     </a>
-                  </div>
-                )}
-                
-                {/* AI分析按钮 */}
-                <div className="premium-card p-6 border-white/10">
-                  <button 
-                    onClick={() => handleProductAIAnalysis(selectedProduct)} 
-                    disabled={isAiAnalyzing}
-                    className="w-full bg-indigo-600 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-indigo-500 transition-all shadow-xl active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
-                  >
-                    {isAiAnalyzing ? <RefreshCw className="animate-spin" size={18} /> : <Sparkles size={18} />} 
-                    {isAiAnalyzing ? t('ai_analyzing') : t('ai_deep_analysis')}
-                  </button>
-                </div>
-                
-                {/* AI分析结果 */}
-                {aiAnalysis && (
-                  <div className="premium-card p-8 border-indigo-500/30 bg-indigo-950/20 relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                      <Brain size={100} className="text-indigo-400" />
-                    </div>
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className="size-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
-                        <Sparkles size={20} />
-                      </div>
-                      <div>
-                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('ai_deep_analysis')}</h4>
-                        <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mt-1">Generated via Gemini Node</p>
-                      </div>
-                    </div>
-                    <div className="prose prose-invert max-w-none">
-                      <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-medium">
-                        {aiAnalysis}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* AI竞品对策按钮 */}
-                <div className="premium-card p-6 border-white/10">
-                  <button 
-                    onClick={() => handleCompetitorAnalysis(selectedProduct)} 
-                    disabled={isCompetitorAnalyzing}
-                    className="w-full bg-gradient-to-r from-orange-600 to-red-600 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:from-orange-700 hover:to-red-700 transition-all shadow-xl active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
-                  >
-                    {isCompetitorAnalyzing ? <RefreshCw className="animate-spin" size={18} /> : <Brain size={18} />} 
-                    {isCompetitorAnalyzing ? t('ai_analyzing') : t('ai_competitor_strategy')}
-                  </button>
-                </div>
-                
-                {/* AI竞品对策结果 */}
-                {competitorAnalysis && (
-                  <div className="premium-card p-8 border-orange-500/30 bg-orange-950/20 relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                      <Brain size={100} className="text-orange-400" />
-                    </div>
-                    <div className="flex items-center gap-4 mb-6">
-                      <div className="size-10 bg-gradient-to-r from-orange-600 to-red-600 rounded-xl flex items-center justify-center text-white">
-                        <Brain size={20} />
-                      </div>
-                      <div>
-                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('ai_competitor_strategy')}</h4>
-                        <p className="text-[8px] font-black text-orange-400 uppercase tracking-widest mt-1">Competitor Counter Strategy</p>
-                      </div>
-                    </div>
-                    <div className="prose prose-invert max-w-none">
-                      <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-medium">
-                        {competitorAnalysis}
-                      </div>
-                    </div>
                   </div>
                 )}
                 

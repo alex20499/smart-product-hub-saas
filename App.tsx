@@ -19,6 +19,7 @@ const INITIAL_USERS: User[] = [
 const App: React.FC = () => {
   const [lastSaved, setLastSaved] = useState<string>('Initializing...');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [diagnostic, setDiagnostic] = useState<{msg: string, code?: string} | null>(null);
   
   const [state, setState] = useState<AppState>(() => {
@@ -173,6 +174,7 @@ const App: React.FC = () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) {
       setState((prev) => ({ ...prev, currentUser: null }));
+      setAuthChecked(true);
       return;
     }
     const { data: profile } = await supabase
@@ -193,6 +195,7 @@ const App: React.FC = () => {
     } else {
       setState((prev) => ({ ...prev, currentUser: null }));
     }
+    setAuthChecked(true);
   }, []);
 
   useEffect(() => {
@@ -239,6 +242,15 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
       const { categoryId, ...restData } = data;
+      let mainImage = restData.mainImage || '';
+      if (mainImage.startsWith('data:image/')) {
+        try {
+          const { uploadImageToStorage } = await import('./utils/uploadImage');
+          mainImage = await uploadImageToStorage(mainImage);
+        } catch (e) {
+          console.warn('主图 base64 上传失败，将尝试原样保存:', e);
+        }
+      }
       const now = new Date().toISOString();
       
       // 分离核心固定字段和动态字段
@@ -254,7 +266,7 @@ const App: React.FC = () => {
         actual_price: restData.actualPrice != null && restData.actualPrice !== '' ? Number(restData.actualPrice) : null,
         monthly_sales: Number(restData.monthlySales || 0),
         rating: Number(restData.rating || 0),
-        main_image: restData.mainImage || '',
+        main_image: mainImage,
         // 时间戳 - PostgreSQL 需要 ISO 8601 字符串，不能是毫秒数
         created_at: now,
         updated_at: now,
@@ -263,7 +275,6 @@ const App: React.FC = () => {
       
       // 动态字段放入 attributes (品类特定参数)
       const dynamicFields = { ...restData };
-      // 移除所有核心字段，只保留品类特定参数
       delete dynamicFields.brand;
       delete dynamicFields.model;
       delete dynamicFields.linkUrl;
@@ -274,18 +285,41 @@ const App: React.FC = () => {
       delete dynamicFields.monthlySales;
       delete dynamicFields.rating;
       delete dynamicFields.mainImage;
-      
+      delete dynamicFields.categoryId;
+
+      const attributes: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(dynamicFields)) {
+        if (k === 'categoryId' || v === undefined) continue;
+        try {
+          JSON.stringify(v);
+          attributes[k] = v;
+        } catch {
+          attributes[k] = String(v);
+        }
+      }
+
       const payload = {
         ...fixedFields,
-        attributes: dynamicFields
+        attributes
       };
-      
-      const { error } = await supabase.from('products').insert([payload]);
-      if (error) setDiagnostic({ msg: error.message, code: error.code });
-      await fetchFromCloud(true);
+
+      const INSERT_TIMEOUT_MS = 60000;
+      const insertPromise = supabase.from('products').insert([payload]);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(t('save_timeout'))), INSERT_TIMEOUT_MS)
+      );
+      const { error } = await Promise.race([insertPromise, timeoutPromise]);
+      if (error) {
+        console.error('[Product Add] Supabase error:', error.code, error.message, payload);
+        setDiagnostic({ msg: error.message, code: error.code });
+        throw new Error(error.message);
+      }
+      // 同步列表在后台执行，避免长时间等待导致“请求超时”
+      fetchFromCloud(true).catch(() => {});
     } catch (err: any) {
       console.error('Product add error:', err);
       setDiagnostic({ msg: err?.message || t('add_product_failed'), code: 'ADD_ERROR' });
+      throw err;
     } finally {
       setIsSyncing(false);
     }
@@ -295,6 +329,15 @@ const App: React.FC = () => {
     setIsSyncing(true);
     try {
       const { categoryId, ...restData } = data;
+      let mainImage = restData.mainImage || '';
+      if (mainImage.startsWith('data:image/')) {
+        try {
+          const { uploadImageToStorage } = await import('./utils/uploadImage');
+          mainImage = await uploadImageToStorage(mainImage);
+        } catch (e) {
+          console.warn('主图 base64 上传失败:', e);
+        }
+      }
       const now = new Date().toISOString();
       
       // 分离核心固定字段和动态字段
@@ -310,15 +353,13 @@ const App: React.FC = () => {
         actual_price: restData.actualPrice != null && restData.actualPrice !== '' ? Number(restData.actualPrice) : null,
         monthly_sales: Number(restData.monthlySales || 0),
         rating: Number(restData.rating || 0),
-        main_image: restData.mainImage || '',
+        main_image: mainImage,
         // 时间戳 - PostgreSQL 需要 ISO 8601 字符串
         updated_at: now,
         updated_by: (state.currentUser?.id && /^[0-9a-f-]{36}$/i.test(state.currentUser.id)) ? state.currentUser.id : null
       };
       
-      // 动态字段放入 attributes (品类特定参数)
       const dynamicFields = { ...restData };
-      // 移除所有核心字段，只保留品类特定参数
       delete dynamicFields.brand;
       delete dynamicFields.model;
       delete dynamicFields.linkUrl;
@@ -329,18 +370,40 @@ const App: React.FC = () => {
       delete dynamicFields.monthlySales;
       delete dynamicFields.rating;
       delete dynamicFields.mainImage;
-      
+      delete dynamicFields.categoryId;
+
+      const attributes: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(dynamicFields)) {
+        if (k === 'categoryId' || v === undefined) continue;
+        try {
+          JSON.stringify(v);
+          attributes[k] = v;
+        } catch {
+          attributes[k] = String(v);
+        }
+      }
+
       const payload = {
         ...fixedFields,
-        attributes: dynamicFields
+        attributes
       };
-      
-      const { error } = await supabase.from('products').update(payload).eq('id', id);
-      if (error) setDiagnostic({ msg: error.message, code: error.code });
-      await fetchFromCloud(true);
+
+      const UPDATE_TIMEOUT_MS = 60000;
+      const updatePromise = supabase.from('products').update(payload).eq('id', id);
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(t('save_timeout'))), UPDATE_TIMEOUT_MS)
+      );
+      const { error } = await Promise.race([updatePromise, timeoutPromise]);
+      if (error) {
+        setDiagnostic({ msg: error.message, code: error.code });
+        throw new Error(error.message);
+      }
+      // 同步列表在后台执行，避免长时间等待导致“请求超时”
+      fetchFromCloud(true).catch(() => {});
     } catch (err: any) {
       console.error('Product update error:', err);
       setDiagnostic({ msg: err?.message || t('update_product_failed'), code: 'UPDATE_ERROR' });
+      throw err;
     } finally {
       setIsSyncing(false);
     }
@@ -474,14 +537,38 @@ const App: React.FC = () => {
 
   const handleUserDelete = async (id: string) => {
     setIsSyncing(true);
-    const { error } = await supabase.from('users').delete().eq('id', id);
-    if (error) setDiagnostic({ msg: error.message, code: error.code });
-    await fetchFromCloud(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) {
+        setDiagnostic({ msg: t('auth_expired'), code: 'AUTH_EXPIRED' });
+        return;
+      }
+      const res = await fetch('/api/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ userId: id })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDiagnostic({ msg: data?.error?.message || `删除失败: ${res.status}`, code: data?.code });
+        return;
+      }
+      await fetchFromCloud(true);
+    } catch (err: any) {
+      setDiagnostic({ msg: err?.message || '删除用户失败', code: 'DELETE_USER_ERR' });
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const login = async (email: string, password: string): Promise<true | string> => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return error.message || t('login_failed');
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      if (msg.includes('invalid api key') || msg.includes('api key') && msg.includes('invalid')) return t('invalid_supabase_key');
+      return error.message || t('login_failed');
+    }
     if (!data.session?.user) return t('login_failed');
     const { data: profile } = await supabase
       .from('users')
@@ -523,6 +610,14 @@ const App: React.FC = () => {
     document.documentElement.lang = state.language;
   }, [state.language]);
 
+  // 等 session 恢复完成后再决定显示登录页，避免有有效 session 时短暂闪出登录框
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen min-h-[100dvh] bg-[#0F172A] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-white/10 border-t-[#A3E635] rounded-full animate-spin" />
+      </div>
+    );
+  }
   if (!state.currentUser) return <Login onLogin={login} language={state.language} t={t} />;
 
 

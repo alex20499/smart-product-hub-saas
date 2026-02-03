@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Zap, TrendingUp, BarChart3, PieChart as PieIcon, 
   ShoppingCart, Award, DollarSign, Globe, Layers,
-  ChevronDown, Sparkles, RefreshCw, MessageSquare, 
+  ChevronDown, RefreshCw, MessageSquare, 
   Target, Activity, SlidersHorizontal, Table as TableIcon,
   Tag, Percent, Info, ExternalLink, ArrowRight, Star,
   Search, Eye, ChevronRight, LayoutGrid, Package, Layout,
@@ -11,7 +11,6 @@ import {
   ThumbsUp, ThumbsDown, AlertTriangle, Brain
 } from 'lucide-react';
 import { ProductData, ProductField, Category, FieldType } from '../types';
-import { callGemini, simplifyForAI } from '../utils/gemini';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, 
   PieChart, Pie, LineChart, Line, CartesianGrid, ScatterChart, Scatter, ZAxis,
@@ -59,15 +58,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
   const [leaderboardSort, setLeaderboardSort] = useState<'sales' | 'price' | 'rating'>('sales');
   
   const [activeDetailId, setActiveDetailId] = useState<string | null>(null);
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
-  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
-  const [globalAiAnalysis, setGlobalAiAnalysis] = useState<string | null>(null);
-  const [isGlobalAnalyzing, setIsGlobalAnalyzing] = useState(false);
 
   const channels = useMemo(() => Array.from(new Set(products.map(p => p?.channel).filter(Boolean))).sort(), [products]);
   const brands = useMemo(() => Array.from(new Set(products.map(p => p?.brand).filter(Boolean))).sort(), [products]);
-
-  const isAiReady = useMemo(() => selectedCategory !== 'all' && selectedChannel !== 'all', [selectedCategory, selectedChannel]);
 
   const marketData = useMemo(() => {
     let data = Array.isArray(products) ? [...products] : [];
@@ -163,46 +156,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
     );
   };
 
-  const handleMarketAIAnalysis = async () => {
-    if (!isAiReady) return;
-    setIsGlobalAnalyzing(true);
-    setGlobalAiAnalysis(null);
-    try {
-      const marketContext = {
-        category: categories.find(c => c.id === selectedCategory)?.name,
-        channel: selectedChannel,
-        skusCount: marketData.length,
-        topBrands: brandShareData.slice(0, 3).map(b => b.name),
-        avgPrice: marketBasics.avgPrice
-      };
-      const prompt = `你是一位电商战略分析官。基于以下市场大盘快照进行分析，预测竞争激烈程度并给出3条关键建议：${JSON.stringify(marketContext)}。请使用${t('category')}对应的语言回答，保持专业精炼。`;
-      const text = await callGemini(prompt);
-      setGlobalAiAnalysis(text);
-    } catch (error) {
-      console.error('Gemini API Error Detail:', error);
-      setGlobalAiAnalysis(t('ai_node_blocked') + ": " + (error instanceof Error ? error.message : t('unknown')));
-    } finally {
-      setIsGlobalAnalyzing(false);
-    }
-  };
-
-  const handleProductAIAnalysis = async (product: ProductData) => {
-    setIsAiAnalyzing(true);
-    setAiAnalysis(null);
-    try {
-      const simple = simplifyForAI(product as Record<string, unknown>);
-      const prompt = `你是一位专业的产品分析师。请分析此单品：${JSON.stringify(simple)}。请给出1条实战销售战术，语言精炼，直接输出建议即可。`;
-      const aiText = await callGemini(prompt);
-      setAiAnalysis(aiText || t('ai_response_empty'));
-      if (aiText) console.log('✅ AI 分析成功');
-    } catch (e: any) {
-      console.error('🚨 AI分析失败:', e.message);
-      setAiAnalysis(`${t('ai_analysis_interrupted')}: ${e.message}`);
-    } finally {
-      setIsAiAnalyzing(false);
-    }
-  };
-
   const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const p = payload[0].payload;
@@ -217,6 +170,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
       );
     }
     return null;
+  };
+
+  const RatingBarTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const p = payload[0].payload as { range: string; count: number };
+    return (
+      <div className="bg-slate-950/98 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-xl text-left">
+        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 border-b border-white/5 pb-2">{t('rating_distribution')}</p>
+        <p className="text-[10px] font-black text-white">{p.range} ★</p>
+        <p className="text-[11px] font-black text-[#A3E635] mt-1">{t('count')}: {p.count}</p>
+      </div>
+    );
+  };
+
+  const PieShareTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const p = payload[0].payload as { name: string; value: number };
+    return (
+      <div className="bg-slate-950/98 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-xl text-left min-w-[140px]">
+        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 border-b border-white/5 pb-2">{t('category_share')}</p>
+        <p className="text-[10px] font-black text-white">{p?.name || '—'}</p>
+        <p className="text-[11px] font-black text-[#A3E635] mt-1">{p?.value?.toLocaleString?.() ?? p?.value}</p>
+      </div>
+    );
   };
 
   const detailedProduct = products.find(p => p.id === activeDetailId);
@@ -241,7 +218,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
             <Layout size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-hover:text-[#A3E635] transition-colors" />
             <select 
               value={selectedCategory}
-              onChange={(e) => { setSelectedCategory(e.target.value); setVisibleProducts(5); setGlobalAiAnalysis(null); }}
+              onChange={(e) => { setSelectedCategory(e.target.value); setVisibleProducts(5); }}
               className="bg-slate-900 border border-white/5 rounded-2xl pl-12 pr-10 py-3 lg:py-4 text-[10px] lg:text-[11px] font-black uppercase text-white tracking-widest outline-none focus:border-[#A3E635]/40 appearance-none min-w-[140px] lg:min-w-[160px] cursor-pointer"
             >
               <option value="all">{t('category')}</option>
@@ -276,49 +253,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
             <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
           </div>
         </div>
-      </div>
-
-      {/* AI 市场分析面板 */}
-      <div className={`premium-card p-6 lg:p-10 border-dashed border-2 transition-all duration-700 ${isAiReady ? 'border-[#A3E635]/30 bg-[#A3E635]/5 shadow-[0_0_50px_rgba(163,230,53,0.05)]' : 'border-white/5 bg-slate-900/20'}`}>
-         <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
-            <div className="flex items-center gap-5 text-left">
-               <div className={`size-14 rounded-2xl flex items-center justify-center transition-all ${isAiReady ? 'bg-[#A3E635] text-slate-950 shadow-[0_0_30px_rgba(163,230,53,0.3)]' : 'bg-slate-800 text-slate-600'}`}>
-                  {isAiReady ? <Sparkles size={24} /> : <Lock size={24} />}
-               </div>
-               <div>
-                  <h4 className="text-[13px] font-black uppercase text-white tracking-widest flex items-center gap-2">
-                     {t('ai_insights')}
-                     {!isAiReady && <span className="px-2 py-0.5 bg-red-500/10 text-red-500 text-[9px] rounded-md border border-red-500/20 animate-pulse">{t('cancel')}</span>}
-                     {isAiReady && <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-[9px] rounded-md border border-green-500/20">✓ {t('ready')}</span>}
-                  </h4>
-                  <p className={`text-[10px] font-black uppercase tracking-widest mt-1 ${isAiReady ? 'text-[#A3E635]' : 'text-slate-600'}`}>
-                     {isAiReady ? t('ai_ready') : t('ai_lock_hint')}
-                  </p>
-               </div>
-            </div>
-            
-            <button 
-              onClick={handleMarketAIAnalysis}
-              disabled={!isAiReady || isGlobalAnalyzing}
-              className={`px-12 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-3 shadow-lg ${isAiReady ? 'bg-white text-slate-950 hover:bg-[#A3E635] hover:shadow-[#A3E635]/25' : 'bg-slate-800 text-slate-600 cursor-not-allowed'}`}
-            >
-               {isGlobalAnalyzing ? <RefreshCw className="animate-spin" size={14} /> : <Zap size={14} />}
-               {t('generate_insight')}
-            </button>
-         </div>
-
-         {globalAiAnalysis && (
-           <div className="mt-10 p-6 lg:p-8 bg-slate-950/50 rounded-[2.5rem] border border-white/5 animate-in slide-in-from-top duration-500">
-              <div className="flex items-center gap-3 mb-6 text-[#A3E635]">
-                 <MessageSquare size={16} />
-                 <p className="text-[11px] font-black uppercase tracking-widest">{t('ai_analysis')}</p>
-                 <span className="px-2 py-0.5 bg-green-500/10 text-green-500 text-[9px] rounded-md border border-green-500/20">✓ {t('done')}</span>
-              </div>
-              <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-medium text-left">
-                 {globalAiAnalysis}
-              </div>
-           </div>
-         )}
       </div>
 
       {/* 核心卡片 */}
@@ -425,7 +359,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                               <Cell key={`cell-${index}`} fill={entry.name === selectedBrand ? '#A3E635' : COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0.5)" strokeWidth={1} />
                             ) : null)}
                           </Pie>
-                          <Tooltip />
+                          <Tooltip content={<PieShareTooltip />} />
                         </PieChart>
                     </ResponsiveContainer>
                   </SafeChartContainer>
@@ -457,7 +391,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" />
                 <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 900 }} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 900 }} allowDecimals={false} />
-                <Tooltip contentStyle={{ backgroundColor: 'rgba(15,23,42,0.98)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '1rem' }} />
+                <Tooltip content={<RatingBarTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)', stroke: 'rgba(255,255,255,0.08)', strokeWidth: 1 }} />
                 <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                   {ratingDistributionData.map((entry, index) => (
                     <Cell key={`bar-${index}`} fill={COLORS[index % COLORS.length]} fillOpacity={0.8} />
@@ -499,7 +433,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
              {sortedLeaderboard.slice(0, visibleProducts).map((product, idx) => product?.id ? (
                <div 
                  key={product.id} 
-                 onClick={() => { setActiveDetailId(product.id); setAiAnalysis(null); }}
+                 onClick={() => setActiveDetailId(product.id)}
                  className={`premium-card p-6 lg:px-10 flex flex-col sm:flex-row items-center gap-8 group cursor-pointer border-white/5 hover:bg-slate-900/40 transition-all animate-in slide-in-from-bottom-2 ${product?.brand === selectedBrand ? 'border-[#A3E635]/30 bg-[#A3E635]/5' : ''}`}
                  style={{ animationDelay: `${idx * 50}ms` }}
                >
@@ -651,35 +585,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                        </div>
                     </div>
                  </div>
-
-                 {/* AI分析按钮 - 放在产品信息之后 */}
-                 <div className="flex justify-center">
-                    <button 
-                      onClick={() => handleProductAIAnalysis(detailedProduct)} 
-                      disabled={isAiAnalyzing}
-                      className="flex items-center gap-3 bg-indigo-600 text-white px-8 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500 transition-all shadow-xl active:scale-95 disabled:opacity-50"
-                    >
-                      {isAiAnalyzing ? <RefreshCw className="animate-spin" size={14} /> : <Sparkles size={14} />} 
-                      {isAiAnalyzing ? t('analyzing') : t('ai_analysis_btn')}
-                    </button>
-                 </div>
-
-                 {/* AI分析结果 */}
-                 {aiAnalysis && (
-                   <div className="premium-card p-10 border-indigo-500/30 bg-indigo-950/20 relative overflow-hidden group">
-                      <div className="absolute top-0 right-0 p-4 opacity-10"><Zap size={100} className="text-indigo-400" /></div>
-                      <div className="flex items-center gap-4 mb-8">
-                         <div className="size-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white"><Sparkles size={20} /></div>
-                         <div>
-                            <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('ai_tactical_analysis')}</h4>
-                            <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mt-1">{t('ai_generated_via')}</p>
-                         </div>
-                      </div>
-                      <div className="prose prose-invert max-w-none">
-                         <div className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-medium">{aiAnalysis}</div>
-                      </div>
-                   </div>
-                 )}
 
                  {/* 卖点区 - 蓝色药丸标签（兼容 sellingPoints 字符串或 attributes.selling_points 数组） */}
                  {(() => {

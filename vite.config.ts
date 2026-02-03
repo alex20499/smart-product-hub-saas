@@ -5,11 +5,8 @@ import { createClient } from '@supabase/supabase-js';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
-    const geminiKey = env.GEMINI_API_KEY || env.VITE_GEMINI_API_KEY;
     const supabaseUrl = env.SUPABASE_URL;
     const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!geminiKey && mode === 'development')
-      console.warn('[Gemini] 未配置 GEMINI_API_KEY，AI 分析不可用，请在 .env 中配置');
     if (!serviceKey && mode === 'development')
       console.warn('[create-user] 未配置 SUPABASE_SERVICE_ROLE_KEY，新建用户将无法登录');
     return {
@@ -65,13 +62,27 @@ export default defineConfig(({ mode }) => {
                     return;
                   }
                   const authEmail = finalEmail.includes('@') ? finalEmail : `${finalUsername}@internal.local`;
-                  const { data: newAuthUser, error: createErr } = await supabase.auth.admin.createUser({ email: authEmail, password: finalPassword, email_confirm: true });
+                  let createRes = await supabase.auth.admin.createUser({ email: authEmail, password: finalPassword, email_confirm: true });
+                  let createErr = createRes.error;
+                  if (createErr?.message?.includes('already been registered')) {
+                    const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+                    const existingAuth = users?.find((u: any) => (u.email || '').toLowerCase() === authEmail);
+                    if (existingAuth) {
+                      const { data: prof } = await supabase.from('users').select('id').eq('auth_user_id', existingAuth.id).maybeSingle();
+                      if (!prof) {
+                        await supabase.auth.admin.deleteUser(existingAuth.id);
+                        createRes = await supabase.auth.admin.createUser({ email: authEmail, password: finalPassword, email_confirm: true });
+                        createErr = createRes.error;
+                      }
+                    }
+                  }
                   if (createErr) {
                     res.statusCode = 400;
                     res.setHeader('Content-Type', 'application/json');
                     res.end(JSON.stringify({ error: { message: createErr.message?.includes('already been registered') ? '该邮箱已被注册' : createErr.message } }));
                     return;
                   }
+                  const newAuthUser = createRes.data;
                   const userId = crypto.randomUUID();
                   const { error: insertErr } = await supabase.from('users').insert([{ id: userId, auth_user_id: newAuthUser.user.id, username: finalUsername, email: authEmail, password: finalPassword, role: finalRole }]);
                   if (insertErr) {
@@ -89,50 +100,112 @@ export default defineConfig(({ mode }) => {
                 }
               });
             });
-          }
-        }] : []),
-        ...(geminiKey ? [{
-          name: 'gemini-proxy',
-          configureServer(server: any) {
-            console.log('[Gemini] 代理已启用，模型: gemma-3-4b-it');
-            server.middlewares.use('/api/gemini', (req: any, res: any, next: () => void) => {
+            server.middlewares.use('/api/delete-user', (req: any, res: any, next: () => void) => {
               if (req.method !== 'POST') return next();
               let body = '';
               req.on('data', (c: string) => body += c);
               req.on('end', async () => {
                 try {
-                  const { model = 'gemma-3-4b-it', contents } = JSON.parse(body || '{}');
-                  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
-                  const payload = {
-                    contents: contents || [],
-                    generationConfig: {
-                      temperature: 0.7,
-                      maxOutputTokens: 2048,
-                      topP: 0.95
-                    },
-                    safetySettings: [
-                      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
-                      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
-                      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
-                      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' }
-                    ]
-                  };
-                  const r = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                  });
-                  const data = await r.json();
-                  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-                  if (!text) {
-                    const full = JSON.stringify(data);
-                    console.warn('[Gemini] 空响应，完整返回:', full.slice(0, 800));
+                  const authHeader = req.headers.authorization;
+                  const token = authHeader?.replace(/^Bearer\s+/i, '');
+                  if (!token) {
+                    res.statusCode = 401;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '未提供登录凭证' } }));
+                    return;
+                  }
+                  const supabase = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+                  const { data: { user: authUser } } = await supabase.auth.getUser(token);
+                  if (!authUser) {
+                    res.statusCode = 401;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '登录已过期，请重新登录' } }));
+                    return;
+                  }
+                  const { data: adminProfile } = await supabase.from('users').select('role').eq('auth_user_id', authUser.id).single();
+                  if (adminProfile?.role !== 'admin') {
+                    res.statusCode = 403;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '仅管理员可删除用户' } }));
+                    return;
+                  }
+                  const { userId } = JSON.parse(body || '{}') || {};
+                  if (!userId || typeof userId !== 'string') {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '请提供 userId 参数' } }));
+                    return;
+                  }
+                  const { data: targetUser } = await supabase.from('users').select('auth_user_id').eq('id', userId).single();
+                  await supabase.from('products').update({ updated_by: null }).eq('updated_by', userId);
+                  const { error: delErr } = await supabase.from('users').delete().eq('id', userId);
+                  if (delErr) {
+                    res.statusCode = 500;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: delErr.message } }));
+                    return;
+                  }
+                  if (targetUser?.auth_user_id) {
+                    await supabase.auth.admin.deleteUser(targetUser.auth_user_id);
                   }
                   res.setHeader('Content-Type', 'application/json');
-                  res.end(JSON.stringify(data));
+                  res.end(JSON.stringify({ ok: true }));
                 } catch (e: any) {
                   res.statusCode = 500;
-                  res.end(JSON.stringify({ error: { message: e?.message || 'Proxy error' } }));
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: { message: e?.message || '删除用户失败' } }));
+                }
+              });
+            });
+            server.middlewares.use('/api/upload-image-from-url', (req: any, res: any, next: () => void) => {
+              if (req.method !== 'POST') return next();
+              let body = '';
+              req.on('data', (c: string) => body += c);
+              req.on('end', async () => {
+                try {
+                  const authHeader = req.headers.authorization;
+                  const token = authHeader?.replace(/^Bearer\s+/i, '');
+                  if (!token) {
+                    res.statusCode = 401;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '未提供登录凭证' } }));
+                    return;
+                  }
+                  const supabase = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+                  const { data: { user } } = await supabase.auth.getUser(token);
+                  if (!user) {
+                    res.statusCode = 401;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '登录已过期' } }));
+                    return;
+                  }
+                  const { url } = JSON.parse(body || '{}') || {};
+                  if (!url || typeof url !== 'string' || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '请提供有效图片 URL' } }));
+                    return;
+                  }
+                  const controller = new AbortController();
+                  const t = setTimeout(() => controller.abort(), 15000);
+                  const resp = await fetch(url, { signal: controller.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SmartHub/1.0)' } });
+                  clearTimeout(t);
+                  if (!resp.ok) throw new Error(`拉取失败: ${resp.status}`);
+                  const ct = resp.headers.get('content-type') || '';
+                  if (!ct.includes('image/')) throw new Error('非图片类型');
+                  const buf = await resp.arrayBuffer();
+                  if (buf.byteLength > 5242880) throw new Error('图片超过 5MB');
+                  const ext = ct.includes('png') ? 'png' : ct.includes('gif') ? 'gif' : ct.includes('webp') ? 'webp' : 'jpg';
+                  const path = `main/${crypto.randomUUID()}.${ext}`;
+                  const { error } = await supabase.storage.from('product-images').upload(path, buf, { contentType: ct.split(';')[0], upsert: true });
+                  if (error) throw new Error(error.message);
+                  const { data } = supabase.storage.from('product-images').getPublicUrl(path);
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ url: data.publicUrl }));
+                } catch (e: any) {
+                  res.statusCode = e?.name === 'AbortError' ? 408 : 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: { message: e?.name === 'AbortError' ? '请求超时' : (e?.message || '上传失败') } }));
                 }
               });
             });

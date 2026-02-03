@@ -60,11 +60,18 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
     setError('');
 
     const cleanInput = (val: string) => val.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
-    const finalEmail = cleanInput(emailRef.current?.value || email);
+    const raw = cleanInput(emailRef.current?.value || email);
     const finalPass = cleanInput(passRef.current?.value || password);
+    const finalEmail = raw.includes('@') ? raw : `${raw}@internal.local`;
+
+    const AUTH_TIMEOUT_MS = 15000;
+    const loginPromise = onLogin(finalEmail, finalPass);
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(t('auth_timeout'))), AUTH_TIMEOUT_MS)
+    );
 
     try {
-      const result = await onLogin(finalEmail, finalPass);
+      const result = await Promise.race([loginPromise, timeoutPromise]);
       if (result === true) {
         setError('');
       } else {
@@ -105,19 +112,19 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
 
         <form onSubmit={handleLogin} className="space-y-3 sm:space-y-5" noValidate>
           <div className="space-y-1.5">
-            <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">{t('login_email')}</label>
+            <label className="text-[8px] font-black text-slate-500 uppercase tracking-widest ml-1">{t('username_placeholder')}</label>
             <div className="relative group">
               <Mail className="absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 w-3.5 sm:w-4 h-3.5 sm:h-4 text-slate-600 group-focus-within:text-[#A3E635] transition-colors shrink-0" />
               <input
                 ref={emailRef}
                 name="auth_email"
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-slate-900/80 border border-white/5 rounded-xl sm:rounded-2xl pl-11 sm:pl-14 pr-4 py-3 sm:py-4 text-[11px] sm:text-xs font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 shadow-inner transition-all"
-                placeholder={t('email_placeholder')}
+                placeholder={t('username_placeholder')}
                 required
-                autoComplete="email"
+                autoComplete="username"
               />
             </div>
           </div>
@@ -204,7 +211,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
 
         <div className="pt-4 sm:pt-6 border-t border-white/5 flex flex-col gap-2 px-2 items-center">
           <p className="text-[7px] sm:text-[8px] font-black text-slate-600 uppercase tracking-[0.2em] sm:tracking-[0.3em] text-center">
-            {t('design_by')} <span className="text-white">ALEX</span> &copy; 2026
+            {t('footer_attribution')}
           </p>
           <button type="button" onClick={forceResetData} className="text-slate-800 hover:text-red-900 transition-colors p-1 -mb-1" title={t('hard_reset_cache')}>
             <RotateCcw size={10} />

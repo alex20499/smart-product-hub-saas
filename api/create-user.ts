@@ -56,11 +56,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const authEmail = finalEmail.includes('@') ? finalEmail : `${finalUsername}@internal.local`;
 
-    const { data: newAuthUser, error: createErr } = await supabase.auth.admin.createUser({
+    let createResult = await supabase.auth.admin.createUser({
       email: authEmail,
       password: finalPassword,
       email_confirm: true
     });
+    let createErr = createResult.error;
+
+    // 若邮箱已注册，检查是否为孤儿 Auth 用户（public.users 已删但 auth 未删），若是则清理后重试
+    if (createErr?.message?.includes('already been registered')) {
+      const { data: { users } } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+      const existingAuth = users?.find((u: { email?: string }) => (u.email || '').toLowerCase() === authEmail);
+      if (existingAuth) {
+        const { data: profileRow } = await supabase
+          .from('users')
+          .select('id')
+          .eq('auth_user_id', existingAuth.id)
+          .maybeSingle();
+        if (!profileRow) {
+          await supabase.auth.admin.deleteUser(existingAuth.id);
+          createResult = await supabase.auth.admin.createUser({
+            email: authEmail,
+            password: finalPassword,
+            email_confirm: true
+          });
+          createErr = createResult.error;
+        }
+      }
+    }
 
     if (createErr) {
       if (createErr.message?.includes('already been registered')) {
@@ -68,6 +91,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       return res.status(400).json({ error: { message: createErr.message } });
     }
+
+    const newAuthUser = createResult.data;
 
     const userId = crypto.randomUUID();
     const { error: insertErr } = await supabase.from('users').insert([{
