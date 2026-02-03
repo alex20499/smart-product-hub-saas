@@ -309,14 +309,23 @@ const App: React.FC = () => {
         attributes
       };
 
-      const INSERT_TIMEOUT_MS = 60000;
-      const insertPromise = supabase.from('products').insert([payload]);
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(t('save_timeout'))), INSERT_TIMEOUT_MS)
-      );
-      const { error } = await Promise.race([insertPromise, timeoutPromise]);
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('请先登录');
+      const API_TIMEOUT_MS = 95000;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+      const res = await fetch('/api/create-product', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ payload }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const json = await res.json().catch(() => ({}));
+      const error = res.ok ? null : { message: json?.error?.message || t('add_product_failed'), code: json?.error?.code || 'ADD_ERROR' };
       if (error) {
-        console.error('[Product Add] Supabase error:', error.code, error.message, payload);
+        console.error('[Product Add] API error:', res.status, error.message, payload);
         setDiagnostic({ msg: error.message, code: error.code });
         throw new Error(error.message);
       }
@@ -324,8 +333,9 @@ const App: React.FC = () => {
       fetchFromCloud(true).catch(() => {});
     } catch (err: any) {
       console.error('Product add error:', err);
-      setDiagnostic({ msg: err?.message || t('add_product_failed'), code: 'ADD_ERROR' });
-      throw err;
+      const msg = err?.name === 'AbortError' ? t('save_timeout') : (err?.message || t('add_product_failed'));
+      setDiagnostic({ msg, code: 'ADD_ERROR' });
+      throw new Error(msg);
     } finally {
       setIsSyncing(false);
     }

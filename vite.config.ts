@@ -209,6 +209,58 @@ export default defineConfig(({ mode }) => {
                 }
               });
             });
+            server.middlewares.use('/api/create-product', (req: any, res: any, next: () => void) => {
+              if (req.method !== 'POST') return next();
+              let body = '';
+              req.on('data', (c: string) => body += c);
+              req.on('end', async () => {
+                try {
+                  const authHeader = req.headers.authorization;
+                  const token = authHeader?.replace(/^Bearer\s+/i, '');
+                  if (!token) {
+                    res.statusCode = 401;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '未提供登录凭证' } }));
+                    return;
+                  }
+                  const supabase = createClient(supabaseUrl, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+                  const { data: { user: authUser } } = await supabase.auth.getUser(token);
+                  if (!authUser) {
+                    res.statusCode = 401;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '登录已过期，请重新登录' } }));
+                    return;
+                  }
+                  const { data: profile } = await supabase.from('users').select('id, role').eq('auth_user_id', authUser.id).single();
+                  if (!profile || !['admin', 'editor'].includes(profile.role || '')) {
+                    res.statusCode = 403;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '仅 admin/editor 可添加产品' } }));
+                    return;
+                  }
+                  const { payload } = JSON.parse(body || '{}') || {};
+                  if (!payload || typeof payload !== 'object') {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '请提供有效 payload' } }));
+                    return;
+                  }
+                  const { data, error } = await supabase.from('products').insert([payload]).select('id').single();
+                  if (error) {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: error.message, code: error.code } }));
+                    return;
+                  }
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ id: data?.id }));
+                } catch (e: any) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: { message: e?.message || '插入失败' } }));
+                }
+              });
+            });
           }
         }] : [])
       ],
