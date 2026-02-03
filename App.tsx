@@ -143,7 +143,7 @@ const App: React.FC = () => {
           model: p.model || '',
           price: Number(p.price || 0),
           monthlySales: Number(p.monthly_sales || 0),
-          rating: Number(p.rating || 0),
+          rating: Math.round(Math.min(5, Math.max(0, Number(p.rating || 0))) * 100) / 100,
           mainImage: p.main_image || '',
           linkUrl: p.link_url || '',
           channel: p.channel || '',
@@ -272,7 +272,7 @@ const App: React.FC = () => {
         price: Number(restData.price || 0),
         actual_price: restData.actualPrice != null && restData.actualPrice !== '' ? Number(restData.actualPrice) : null,
         monthly_sales: Number(restData.monthlySales || 0),
-        rating: Number(restData.rating || 0),
+        rating: Math.round(Math.min(5, Math.max(0, Number(restData.rating || 0))) * 100) / 100,
         main_image: mainImage,
         // 时间戳 - PostgreSQL 需要 ISO 8601 字符串，不能是毫秒数
         created_at: now,
@@ -401,7 +401,7 @@ const App: React.FC = () => {
         price: Number(restData.price || 0),
         actual_price: restData.actualPrice != null && restData.actualPrice !== '' ? Number(restData.actualPrice) : null,
         monthly_sales: Number(restData.monthlySales || 0),
-        rating: Number(restData.rating || 0),
+        rating: Math.round(Math.min(5, Math.max(0, Number(restData.rating || 0))) * 100) / 100,
         main_image: mainImage,
         // 时间戳 - PostgreSQL 需要 ISO 8601 字符串
         updated_at: now,
@@ -491,22 +491,30 @@ const App: React.FC = () => {
         return;
       }
 
-      // 2. 将 fields 同步到 category_templates 表
+      // 2. 将 fields 同步到 category_templates 表（遇错即停，避免部分成功部分失败）
       for (const cat of newCategories) {
         const fields = cat.fields || [];
-        // 删除该品类下已不在新列表中的模板
         const keepKeys = fields.map((f) => f.id);
-        const { data: existing } = await supabase
+        const { data: existing, error: listErr } = await supabase
           .from('category_templates')
           .select('id, field_key')
           .eq('category_id', cat.id);
+        if (listErr) {
+          setDiagnostic({ msg: listErr.message, code: listErr.code });
+          setIsSyncing(false);
+          return;
+        }
         if (existing?.length) {
           const toDelete = existing.filter((t) => !keepKeys.includes(t.field_key)).map((t) => t.id);
           for (const id of toDelete) {
-            await supabase.from('category_templates').delete().eq('id', id);
+            const { error: delErr } = await supabase.from('category_templates').delete().eq('id', id);
+            if (delErr) {
+              setDiagnostic({ msg: delErr.message, code: delErr.code });
+              setIsSyncing(false);
+              return;
+            }
           }
         }
-        // 逐个 upsert 字段模板
         for (let i = 0; i < fields.length; i++) {
           const f = fields[i];
           const templateRow = {
@@ -519,9 +527,14 @@ const App: React.FC = () => {
             sort_order: i,
             is_active: true
           };
-          await supabase.from('category_templates').upsert(templateRow, {
+          const { error: upsertErr } = await supabase.from('category_templates').upsert(templateRow, {
             onConflict: 'category_id,field_key'
           });
+          if (upsertErr) {
+            setDiagnostic({ msg: upsertErr.message, code: upsertErr.code });
+            setIsSyncing(false);
+            return;
+          }
         }
       }
       await fetchFromCloud(true);

@@ -277,6 +277,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
 
   const [pasteParseError, setPasteParseError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const CORE_FORM_KEYS = ['brand', 'model', 'channel', 'shopName', 'linkUrl', 'price', 'actualPrice', 'monthlySales', 'rating', 'mainImage'];
 
@@ -309,12 +310,20 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   }, [filteredProducts, currentPage, itemsPerPage]);
   
   const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
-  
+
   const formScrollRef = useRef<HTMLFormElement>(null);
   // 重置分页当筛选条件改变
   useEffect(() => {
     setCurrentPage(1);
   }, [selectedCategory, selectedChannel, searchQuery, itemsPerPage]);
+  // 列表变短时（如删除、筛选后）若当前页超出总页数则回退到最后一页，避免空列表
+  useEffect(() => {
+    if (totalPages >= 1 && currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    } else if (totalPages === 0) {
+      setCurrentPage(1);
+    }
+  }, [totalPages, currentPage]);
   // 打开新增/编辑表单时滚动到顶部，确保看到核心信息（渠道、店铺名等）
   useEffect(() => {
     if (selectedCatForAdd || editingId) {
@@ -391,59 +400,64 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
     setIsEditingProduct(true);
   };
   
-  const handleSaveProduct = () => {
+  const handleSaveProduct = async () => {
     if (!selectedProduct) return;
-    
+    if (isSavingEdit) return;
+
+    // 数据验证
+    if (!editFormData.brand?.trim()) {
+      alert(t('brand_required'));
+      return;
+    }
+    if (!editFormData.model?.trim()) {
+      alert(t('model_required'));
+      return;
+    }
+    if (!editFormData.channel?.trim()) {
+      alert(t('channel_required'));
+      return;
+    }
+
+    const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
+    const sellingPointsVal = Array.isArray(editFormData.sellingPoints)
+      ? editFormData.sellingPoints.join(', ')
+      : (editFormData.sellingPoints?.trim?.() || '');
+    const updateData: Record<string, any> = {
+      categoryId: editFormData.categoryId || selectedProduct.categoryId,
+      brand: editFormData.brand?.trim() || '',
+      model: editFormData.model?.trim() || '',
+      channel: editFormData.channel?.trim() || '',
+      shopName: editFormData.shopName?.trim() || '',
+      price: Number(editFormData.price) || 0,
+      actualPrice: editFormData.actualPrice != null && editFormData.actualPrice !== '' ? Number(editFormData.actualPrice) : undefined,
+      rating: Number(editFormData.rating) || 0,
+      monthlySales: Number(editFormData.monthlySales) || 0,
+      linkUrl: editFormData.linkUrl?.trim() || '',
+      mainImage: (typeof editFormData.mainImage === 'string' ? editFormData.mainImage.trim() : editFormData.mainImage) || '',
+      sellingPoints: sellingPointsVal,
+      pros: editFormData.pros?.trim() || '',
+      cons: editFormData.cons?.trim() || '',
+      rawReview: editFormData.rawReview?.trim() || '',
+      insightSummary: editFormData.insightSummary?.trim() || ''
+    };
+    // 保留品类动态字段（抽屉编辑未展示的字段从 selectedProduct 带入）
+    activeCat?.fields?.forEach(f => {
+      if (['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','pros','cons','rawReview','insightSummary','categoryId'].includes(f.id)) return;
+      const val = editFormData[f.id] ?? selectedProduct?.[f.id] ?? selectedProduct?.attributes?.[f.id];
+      if (val !== undefined && val !== null) updateData[f.id] = val;
+    });
+
+    setIsSavingEdit(true);
     try {
-      // 数据验证
-      if (!editFormData.brand?.trim()) {
-        alert(t('brand_required'));
-        return;
-      }
-      if (!editFormData.model?.trim()) {
-        alert(t('model_required'));
-        return;
-      }
-      if (!editFormData.channel?.trim()) {
-        alert(t('channel_required'));
-        return;
-      }
-      
-      const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
-      const sellingPointsVal = Array.isArray(editFormData.sellingPoints)
-        ? editFormData.sellingPoints.join(', ')
-        : (editFormData.sellingPoints?.trim?.() || '');
-      const updateData: Record<string, any> = {
-        categoryId: editFormData.categoryId || selectedProduct.categoryId,
-        brand: editFormData.brand?.trim() || '',
-        model: editFormData.model?.trim() || '',
-        channel: editFormData.channel?.trim() || '',
-        shopName: editFormData.shopName?.trim() || '',
-        price: Number(editFormData.price) || 0,
-        actualPrice: editFormData.actualPrice != null && editFormData.actualPrice !== '' ? Number(editFormData.actualPrice) : undefined,
-        rating: Number(editFormData.rating) || 0,
-        monthlySales: Number(editFormData.monthlySales) || 0,
-        linkUrl: editFormData.linkUrl?.trim() || '',
-        mainImage: (typeof editFormData.mainImage === 'string' ? editFormData.mainImage.trim() : editFormData.mainImage) || '',
-        sellingPoints: sellingPointsVal,
-        pros: editFormData.pros?.trim() || '',
-        cons: editFormData.cons?.trim() || '',
-        rawReview: editFormData.rawReview?.trim() || '',
-        insightSummary: editFormData.insightSummary?.trim() || ''
-      };
-      // 保留品类动态字段（抽屉编辑未展示的字段从 selectedProduct 带入）
-      activeCat?.fields?.forEach(f => {
-        if (['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','pros','cons','rawReview','insightSummary','categoryId'].includes(f.id)) return;
-        const val = editFormData[f.id] ?? selectedProduct?.[f.id] ?? selectedProduct?.attributes?.[f.id];
-        if (val !== undefined && val !== null) updateData[f.id] = val;
-      });
-      
       console.log('保存数据:', updateData);
-      onUpdate(selectedProduct.id, updateData);
+      await onUpdate(selectedProduct.id, updateData);
       setIsEditingProduct(false);
     } catch (error) {
       console.error('保存失败:', error);
       alert(t('save_failed'));
+      // 不关闭编辑态，方便用户重试或取消；父组件会设置 diagnostic 弹层
+    } finally {
+      setIsSavingEdit(false);
     }
   };
   
@@ -1570,11 +1584,13 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                 <div className="flex flex-wrap gap-4">
                   {canEdit && isEditingProduct && (
                     <button
+                      type="button"
                       onClick={handleSaveProduct}
-                      className="flex-1 min-w-[140px] bg-green-600 border border-green-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-green-700 transition-all flex items-center justify-center gap-3"
+                      disabled={isSavingEdit}
+                      className="flex-1 min-w-[140px] bg-green-600 border border-green-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-green-700 transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      <Check size={18} />
-                      {t('save_changes')}
+                      {isSavingEdit ? <RefreshCw size={18} className="animate-spin" /> : <Check size={18} />}
+                      {isSavingEdit ? t('syncing') : t('save_changes')}
                     </button>
                   )}
                   {canEdit && (

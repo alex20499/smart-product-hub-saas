@@ -59,6 +59,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
   
   const [activeDetailId, setActiveDetailId] = useState<string | null>(null);
 
+  // 当产品列表变化且当前详情产品已不存在时，清空详情 ID（如被删除或同步后列表更新）
+  useEffect(() => {
+    if (activeDetailId && !products.some(p => p?.id === activeDetailId)) {
+      setActiveDetailId(null);
+    }
+  }, [products, activeDetailId]);
+
   const channels = useMemo(() => Array.from(new Set(products.map(p => p?.channel).filter(Boolean))).sort(), [products]);
   const brands = useMemo(() => Array.from(new Set(products.map(p => p?.brand).filter(Boolean))).sort(), [products]);
 
