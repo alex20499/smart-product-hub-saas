@@ -1,9 +1,10 @@
 /**
  * 上传图片到 Supabase Storage，返回公开 URL
  * - base64/Blob：直接上传
- * - 外部 URL：通过 /api/upload-image-from-url 拉取后上传
+ * - 外部 URL：通过 /api/upload-image-from-url 拉取后上传（使用 getAuthToken 带超时与缓存）
  */
 import { supabase } from '../lib/supabase';
+import { getAuthToken } from '../lib/authToken';
 
 const BUCKET = 'product-images';
 const MAX_BASE64_SIZE = 4 * 1024 * 1024; // 4MB，超出则压缩或拒绝
@@ -58,11 +59,9 @@ export async function uploadImageToStorage(value: string, options?: UploadImageO
     return data.publicUrl;
   }
 
-  // 外部 URL：通过 API 拉取并上传（需传入 token，可选 signal 用于取消/超时）
+  // 外部 URL：通过 API 拉取并上传（getAuthToken 带超时与一次重试，与保存产品共用缓存）
   if (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('//')) {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    if (!token) throw new Error('请先登录');
+    const token = await getAuthToken({ timeoutMs: 12000, retryOnce: true });
     const fetchOpts: RequestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },

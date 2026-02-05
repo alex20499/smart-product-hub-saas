@@ -693,46 +693,16 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                          <td className="px-6 py-4 font-num text-[10px] text-white font-black">¥{(Number(p?.price) || 0).toLocaleString()}</td>
                          <td className="px-6 py-4 font-num text-[10px] text-[#A3E635] font-black">{(Number(p?.monthlySales) || 0).toLocaleString()}</td>
                          <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
-                            <div className="relative inline-block">
-                              <button 
-                                onClick={() => {
-                                  setActionsOpenId(actionsOpenId === p.id ? null : p.id);
-                                  setActionsAnchorRect(null);
-                                }} 
-                                className="p-2 text-slate-600 hover:text-white transition-colors rounded-lg hover:bg-white/5"
-                              >
-                                <MoreHorizontal size={18} />
-                              </button>
-                              {actionsOpenId === p.id && (
-                                <>
-                                  <div className="fixed inset-0 z-40" onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); }} />
-                                  <div className="absolute right-0 top-full mt-1 py-1 min-w-[140px] bg-slate-900 border border-white/10 rounded-xl shadow-xl z-50">
-                                    <button 
-                                      onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); handleProductClick(p); }} 
-                                      className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:text-white flex items-center gap-2"
-                                    >
-                                      <Eye size={14} /> {t('view_detail')}
-                                    </button>
-                                    {canEdit && (
-                                      <button 
-                                        onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); handleOpenProductForEdit(p); }} 
-                                        className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:text-[#A3E635] flex items-center gap-2"
-                                      >
-                                        <Edit2 size={14} /> {t('modify')}
-                                      </button>
-                                    )}
-                                    {canEdit && (
-                                      <button 
-                                        onClick={() => handleDeleteFromList(p.id, p.model || p.brand || t('product_item'))} 
-                                        className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-red-400 hover:bg-red-500/10 flex items-center gap-2"
-                                      >
-                                        <Trash2 size={14} /> {t('delete')}
-                                      </button>
-                                    )}
-                                  </div>
-                                </>
-                              )}
-                            </div>
+                            <button 
+                              onClick={(e) => {
+                                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                                setActionsOpenId(actionsOpenId === p.id ? null : p.id);
+                                setActionsAnchorRect(actionsOpenId === p.id ? null : rect);
+                              }} 
+                              className="p-2 text-slate-600 hover:text-white transition-colors rounded-lg hover:bg-white/5"
+                            >
+                              <MoreHorizontal size={18} />
+                            </button>
                          </td>
                       </tr>
                     ))}
@@ -742,8 +712,8 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
         </div>
       )}
 
-      {/* 网格视图操作菜单 - 通过 Portal 渲染，避免卡片 overflow-hidden 导致直角阴影 */}
-      {viewMode === 'grid' && actionsOpenId && actionsAnchorRect && (() => {
+      {/* 网格/列表视图操作菜单 - 通过 Portal 渲染到 body，避免被外层 overflow 裁剪或出现滚动条 */}
+      {actionsOpenId && actionsAnchorRect && (() => {
         const p = paginatedProducts.find(pr => pr.id === actionsOpenId);
         if (!p) return null;
         const { bottom, right } = actionsAnchorRect;

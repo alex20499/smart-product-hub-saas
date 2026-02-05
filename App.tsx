@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
+import { getAuthToken, isSessionTimeoutError } from './lib/authToken';
 import { Layout } from './components/Layout';
 import { Dashboard } from './components/Dashboard';
 import { ProductInventory } from './components/ProductInventory';
@@ -311,26 +312,15 @@ const App: React.FC = () => {
       };
       console.log('[Product Add] payload 已构建, categoryId:', categoryId);
 
-      const SESSION_TIMEOUT_MS = 8000;
-      const sessionPromise = supabase.auth.getSession();
-      const sessionTimeout = new Promise<never>((_, rej) =>
-        setTimeout(() => rej(new Error('SESSION_TIMEOUT')), SESSION_TIMEOUT_MS)
-      );
-      let session: { data: { session: { access_token?: string } | null } };
+      let token: string;
       try {
-        session = await Promise.race([sessionPromise, sessionTimeout]);
+        token = await getAuthToken({ timeoutMs: 12000, retryOnce: true });
       } catch (e: any) {
-        if (e?.message === 'SESSION_TIMEOUT') {
+        if (e?.message?.includes?.('获取登录状态超时')) {
           console.error('[Product Add] getSession 超时');
-          setDiagnostic({ msg: '获取登录状态超时，请检查网络或刷新重试', code: 'SESSION_TIMEOUT' });
-          throw new Error('获取登录状态超时，请检查网络或刷新重试');
+          setDiagnostic({ msg: e.message, code: 'SESSION_TIMEOUT' });
         }
         throw e;
-      }
-      const token = session?.data?.session?.access_token;
-      if (!token) {
-        console.error('[Product Add] 无 token，请先登录');
-        throw new Error('请先登录');
       }
       console.log('[Product Add] 请求 /api/create-product');
       const API_TIMEOUT_MS = 95000;
@@ -361,7 +351,8 @@ const App: React.FC = () => {
     } catch (err: any) {
       console.error('[Product Add] 异常:', err?.name, err?.message);
       const msg = err?.name === 'AbortError' ? t('save_timeout') : (err?.message || t('add_product_failed'));
-      setDiagnostic({ msg, code: 'ADD_ERROR' });
+      const code = isSessionTimeoutError(err) ? 'SESSION_TIMEOUT' : 'ADD_ERROR';
+      setDiagnostic({ msg, code });
       throw new Error(msg);
     } finally {
       setIsSyncing(false);
