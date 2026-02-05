@@ -86,13 +86,14 @@ INSERT INTO users (username, password, role, email) VALUES
 ('editor', 'password', 'editor', 'editor@example.com'),
 ('viewer', 'password', 'viewer', 'viewer@example.com');
 
--- 7. 插入基础品类数据
+-- 7. 插入基础品类数据（与前端 DEFAULT_CATEGORIES 一致，含 cat_charger）
 INSERT INTO categories (id, name, description, sort_order) VALUES
 ('cat_powerbank', '充电宝', '移动电源和充电设备', 1),
-('cat_earbuds', '蓝牙耳机', '无线音频设备', 2),
-('cat_smartwatch', '智能手表', '可穿戴智能设备', 3),
-('cat_laptop', '笔记本电脑', '便携计算设备', 4),
-('cat_phone', '智能手机', '移动通信设备', 5);
+('cat_charger', '充电器/适配器', '充电器与适配器', 2),
+('cat_earbuds', '蓝牙耳机', '无线音频设备', 3),
+('cat_smartwatch', '智能手表', '可穿戴智能设备', 4),
+('cat_laptop', '笔记本电脑', '便携计算设备', 5),
+('cat_phone', '智能手机', '移动通信设备', 6);
 
 -- 8. 插入品类模板数据
 INSERT INTO category_templates (category_id, field_key, field_name, field_type, is_required, sort_order, options) VALUES
@@ -102,6 +103,9 @@ INSERT INTO category_templates (category_id, field_key, field_name, field_type, 
 ('cat_powerbank', 'weight_g', '重量(g)', 'number', false, 3, NULL),
 ('cat_powerbank', 'dimensions', '尺寸(mm)', 'text', false, 4, NULL),
 ('cat_powerbank', 'led_display', 'LED显示', 'select', false, 5, '["有", "无"]'),
+
+-- 充电器/适配器品类
+('cat_charger', 'max_power', '总功率(W)', 'number', false, 1, NULL),
 
 -- 蓝牙耳机品类  
 ('cat_earbuds', 'battery_life', '续航时间(h)', 'number', true, 1, NULL),

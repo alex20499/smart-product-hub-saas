@@ -35,13 +35,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
 
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const em = forgotEmail.trim();
-    if (!em) return;
+    const raw = forgotEmail.trim().replace(/[\u200B-\u200D\uFEFF]/g, '');
+    if (!raw) return;
+    // 与登录一致：支持用户名或邮箱，无 @ 时补 @internal.local
+    const finalEmail = raw.includes('@') ? raw : `${raw}@internal.local`;
     setIsSending(true);
     setForgotError('');
     setForgotSuccess(false);
     try {
-      const { error: err } = await supabase.auth.resetPasswordForEmail(em, {
+      const { error: err } = await supabase.auth.resetPasswordForEmail(finalEmail, {
         redirectTo: `${window.location.origin}/`
       });
       if (err) {
@@ -166,7 +168,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
               </div>
               <form onSubmit={handleForgotSubmit} className="flex flex-col sm:flex-row gap-2">
                 <input
-                  type="email"
+                  type="text"
+                  inputMode="email"
                   value={forgotEmail}
                   onChange={(e) => setForgotEmail(e.target.value)}
                   placeholder={t('email_placeholder')}
