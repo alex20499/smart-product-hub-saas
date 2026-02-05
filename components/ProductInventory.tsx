@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Plus, Trash2, X, Package, Edit2, 
@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { ProductData, ProductField, FieldType, User, Category } from '../types';
 import { DEFAULT_CHANNEL_OPTIONS } from '../constants';
+import { getAuthToken } from '../lib/authToken';
+import { ImageInput } from './ImageInput';
 
 interface ProductInventoryProps {
   products: ProductData[];
@@ -107,152 +109,12 @@ const StarRatingInput: React.FC<{ value: number | string; onChange: (val: number
   );
 };
 
-const UPLOAD_TIMEOUT_MS = 25000;
-
-const ImageInput: React.FC<{ value: string; onChange: (val: string) => void; placeholder?: string; t: (key: string) => string }> = ({ value, onChange, t }) => {
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
-  const doUpload = async (val: string, showPreviewFirst = false) => {
-    if (!val?.trim()) return;
-    setUploading(true);
-    setUploadError(null);
-    if (showPreviewFirst) onChange(val);
-    const ac = new AbortController();
-    abortRef.current = ac;
-    const timeoutId = setTimeout(() => ac.abort(), UPLOAD_TIMEOUT_MS);
-    try {
-      const { uploadImageToStorage } = await import('../utils/uploadImage');
-      const isExternal = val.trim().startsWith('http://') || val.trim().startsWith('https://') || val.trim().startsWith('//');
-      const url = await uploadImageToStorage(val, isExternal ? { signal: ac.signal } : undefined);
-      onChange(url);
-    } catch (err: any) {
-      const msg = err?.name === 'AbortError' ? t('upload_cancelled') : (err?.message || t('upload_failed'));
-      setUploadError(msg);
-      if (showPreviewFirst) onChange(val);
-    } finally {
-      clearTimeout(timeoutId);
-      abortRef.current = null;
-      setUploading(false);
-    }
-  };
-
-  const handleCancelUpload = () => {
-    abortRef.current?.abort();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const dataUrl = event.target?.result as string;
-        if (dataUrl) await doUpload(dataUrl, true);
-      };
-      reader.readAsDataURL(file);
-    }
-    e.target.value = '';
-  };
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = async (ev) => {
-            const dataUrl = ev.target?.result as string;
-            if (dataUrl) await doUpload(dataUrl, true);
-          };
-          reader.readAsDataURL(file);
-        }
-        return;
-      }
-    }
-    const text = e.clipboardData?.getData('text');
-    if (text && (text.startsWith('http://') || text.startsWith('https://') || text.startsWith('//'))) {
-      e.preventDefault();
-      const url = text.startsWith('//') ? 'https:' + text : text;
-      onChange(url);
-      setUploadError(null);
-      // 粘贴链接不再自动上传，仅显示预览。用户可点「保存到云端」或直接「保存」
-    }
-  };
-
-  const isExternalUrl = value && (value.startsWith('http://') || value.startsWith('https://')) && !value.includes('/storage/v1/object/public/product-images/');
-  const showInInput = value && (value.startsWith('http://') || value.startsWith('https://'));
-
-  return (
-    <div className="space-y-3" onPaste={handlePaste}>
-      <div className="flex gap-2">
-        <input
-          type="url"
-          className="flex-1 bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner placeholder:text-slate-600"
-          placeholder={t('main_image_paste_hint')}
-          value={showInInput ? value : ''}
-          title={showInInput ? value : undefined}
-          onChange={e => { setUploadError(null); onChange(e.target.value.trim()); }}
-          disabled={uploading}
-        />
-        {isExternalUrl && (
-          <button
-            type="button"
-            onClick={() => doUpload(value)}
-            disabled={uploading}
-            className="px-4 py-2.5 bg-[#A3E635] text-slate-950 rounded-xl font-black text-[9px] uppercase tracking-widest hover:opacity-90 disabled:opacity-50 shrink-0"
-          >
-            {uploading ? '...' : t('upload_to_cloud')}
-          </button>
-        )}
-      </div>
-      {uploadError && <p className="text-[9px] text-red-400 font-medium">{uploadError}</p>}
-      <div className="relative group">
-        <div className={`w-full min-h-[120px] bg-slate-900/50 border-2 border-dashed rounded-2xl transition-all flex flex-col items-center justify-center p-4 gap-2 ${value ? 'border-[#A3E635]/30' : 'border-white/5 hover:border-[#A3E635]/40 hover:bg-slate-800/50'}`}>
-          {value ? (
-            <div className="relative w-full h-28 rounded-xl overflow-hidden shadow-inner bg-slate-950">
-              <img src={value} className="w-full h-full object-contain p-2" alt="Preview" />
-              {uploading && (
-                <div className="absolute inset-0 bg-slate-950/80 flex flex-col items-center justify-center gap-3">
-                  <span className="text-[10px] font-black uppercase text-[#A3E635] flex items-center gap-2">
-                    <RefreshCw size={14} className="animate-spin" />
-                    {t('image_uploading')}
-                  </span>
-                  <p className="text-[9px] text-slate-400 max-w-[200px] text-center">{t('save_with_link_hint')}</p>
-                  <button
-                    type="button"
-                    onClick={handleCancelUpload}
-                    className="px-3 py-1.5 text-[9px] font-black uppercase border border-slate-500 rounded-lg text-slate-400 hover:border-red-500/50 hover:text-red-400 transition-colors"
-                  >
-                    {t('cancel_upload')}
-                  </button>
-                </div>
-              )}
-              {!uploading && (
-                <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
-                  <button type="button" onClick={() => onChange('')} className="p-2 bg-red-500/20 text-red-400 rounded-xl border border-red-500/30 hover:bg-red-500 hover:text-white transition-all"><Trash2 size={14} /></button>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center">
-              <div className="size-10 bg-slate-950 rounded-xl flex items-center justify-center text-slate-700 mx-auto mb-2 shadow-inner"><ImageIcon size={20} /></div>
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">{t('or_upload_local')}</p>
-            </div>
-          )}
-          <input type="file" accept="image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" disabled={uploading} style={{ pointerEvents: uploading ? 'none' : undefined }} />
-        </div>
-      </div>
-    </div>
-  );
-};
-
 export const ProductInventory: React.FC<ProductInventoryProps> = ({
-  products, categories, onAdd, onUpdate, onDelete, currentUser, isAddModalOpen, setIsAddModalOpen, t
+  products: productsProp, categories: categoriesProp, onAdd, onUpdate, onDelete, currentUser: currentUserProp, isAddModalOpen, setIsAddModalOpen, t
 }) => {
+  const products = productsProp ?? [];
+  const categories = categoriesProp ?? [];
+  const currentUser = currentUserProp ?? { id: '', username: '', role: 'viewer' as const };
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // list = 列表/表格视图
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
@@ -266,8 +128,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   
-  // 侧边抽屉状态
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  // 产品详情/编辑状态
   const [selectedProduct, setSelectedProduct] = useState<ProductData | null>(null);
   const [isEditingProduct, setIsEditingProduct] = useState(false);
   const [editFormData, setEditFormData] = useState<Record<string, any>>({});
@@ -279,7 +140,22 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
+  // 打开新增弹窗时预取 token，保存时直接用缓存，减少 SESSION_TIMEOUT
+  useEffect(() => {
+    if (isAddModalOpen) {
+      getAuthToken({ timeoutMs: 20000, retryOnce: true }).catch(() => {});
+    }
+  }, [isAddModalOpen]);
+
   const CORE_FORM_KEYS = ['brand', 'model', 'channel', 'shopName', 'linkUrl', 'price', 'actualPrice', 'monthlySales', 'rating', 'mainImage'];
+
+  /** 从产品对象安全取数：始终使用解析后的 attributes，避免详情/编辑取不到后台已有内容 */
+  const getNormalizedProduct = useCallback((p: ProductData | null | undefined): Record<string, unknown> => {
+    if (!p) return {};
+    const raw = (p as any)?.attributes;
+    const att = typeof raw === 'string' ? (() => { try { return JSON.parse(raw || '{}'); } catch { return {}; } })() : (raw ?? {}) as Record<string, unknown>;
+    return { ...att, ...p };
+  }, []);
 
   const canEdit = currentUser.role === 'admin' || currentUser.role === 'editor';
   const channels = useMemo(() => Array.from(new Set(products.map(p => p?.channel).filter(Boolean))).sort(), [products]);
@@ -312,6 +188,8 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   const totalPages = Math.ceil(filteredProducts.length / itemsPerPage);
 
   const formScrollRef = useRef<HTMLFormElement>(null);
+  const scrollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
   // 重置分页当筛选条件改变
   useEffect(() => {
     setCurrentPage(1);
@@ -331,6 +209,16 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       return () => clearTimeout(t);
     }
   }, [selectedCatForAdd, editingId]);
+  
+  // 清理所有定时器
+  useEffect(() => {
+    return () => {
+      if (scrollTimerRef.current) {
+        clearTimeout(scrollTimerRef.current);
+        scrollTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const activeCategory = categories.find(c => c?.id === (editingId ? products.find(p => p?.id === editingId)?.categoryId : selectedCatForAdd));
   const detailedProduct = products.find(p => p?.id === viewDetailId);
@@ -344,22 +232,24 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   const handleAddClick = () => {
     setIsAddModalOpen(true);
     // 点击新增按钮后，等待抽屉打开然后滚动到底部
-    setTimeout(() => {
+    if (scrollTimerRef.current) {
+      clearTimeout(scrollTimerRef.current);
+    }
+    scrollTimerRef.current = setTimeout(() => {
       const drawerElement = document.querySelector('.drawer-container');
       if (drawerElement) {
         drawerElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }
+      scrollTimerRef.current = null;
     }, 100);
   };
   
   // 侧边抽屉相关函数
   const handleProductClick = (product: ProductData) => {
     setSelectedProduct(product);
-    setIsDrawerOpen(true);
   };
   
-  const handleCloseDrawer = () => {
-    setIsDrawerOpen(false);
+  const handleCloseDetail = () => {
     setSelectedProduct(null);
     setIsEditingProduct(false);
     setEditFormData({});
@@ -367,36 +257,49 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   
   const handleEditProduct = () => {
     if (!selectedProduct) return;
-    setIsEditingProduct(true);
-    setEditFormData({
+    const p = selectedProduct as any;
+    const att = (typeof p?.attributes === 'string' ? (() => { try { return JSON.parse(p.attributes || '{}'); } catch { return {}; } })() : (p?.attributes ?? {})) as Record<string, unknown>;
+    const base: Record<string, any> = {
       ...selectedProduct,
-      linkUrl: selectedProduct?.linkUrl || selectedProduct?.attributes?.link_url || '',
-      mainImage: selectedProduct?.mainImage || selectedProduct?.attributes?.mainImage || selectedProduct?.attributes?.main_image || '',
-      sellingPoints: selectedProduct?.attributes?.selling_points || [],
-      pros: selectedProduct?.attributes?.pros || '',
-      cons: selectedProduct?.attributes?.cons || '',
-      rawReview: selectedProduct?.attributes?.raw_review || '',
-      insightSummary: selectedProduct?.attributes?.insight_summary || ''
-    });
-    setTimeout(() => {
+      linkUrl: p?.linkUrl ?? att?.link_url ?? '',
+      mainImage: p?.mainImage ?? att?.mainImage ?? att?.main_image ?? '',
+      sellingPoints: att?.selling_points ?? p?.selling_points ?? (Array.isArray(p?.sellingPoints) ? p.sellingPoints : (typeof p?.sellingPoints === 'string' ? (p.sellingPoints as string).split(',').map((s: string) => s.trim()) : [])) ?? [],
+      pros: p?.pros ?? att?.pros ?? '',
+      cons: p?.cons ?? att?.cons ?? '',
+      rawReview: p?.raw_review ?? p?.rawReview ?? att?.raw_review ?? '',
+      insightSummary: p?.insight_summary ?? p?.insightSummary ?? att?.insight_summary ?? '',
+      search_keywords: p?.search_keywords ?? att?.search_keywords ?? ''
+    };
+    Object.entries(att).forEach(([k, v]) => { if (v !== undefined && v !== null && base[k] === undefined) base[k] = v; });
+    setIsEditingProduct(true);
+    setEditFormData(base);
+    if (scrollTimerRef.current) {
+      clearTimeout(scrollTimerRef.current);
+    }
+    scrollTimerRef.current = setTimeout(() => {
       const editSection = document.getElementById('product-edit-section');
       if (editSection) editSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      scrollTimerRef.current = null;
     }, 100);
   };
 
   const handleOpenProductForEdit = (p: ProductData) => {
     setSelectedProduct(p);
-    setIsDrawerOpen(true);
-    setEditFormData({
+    const raw = (p as any)?.attributes;
+    const att = (typeof raw === 'string' ? (() => { try { return JSON.parse(raw || '{}'); } catch { return {}; } })() : (raw ?? {})) as Record<string, unknown>;
+    const base: Record<string, any> = {
       ...p,
-      linkUrl: p?.linkUrl || (p as any)?.attributes?.link_url || '',
-      mainImage: p?.mainImage || (p as any)?.attributes?.mainImage || (p as any)?.attributes?.main_image || '',
-      sellingPoints: (p as any)?.attributes?.selling_points || [],
-      pros: (p as any)?.attributes?.pros || '',
-      cons: (p as any)?.attributes?.cons || '',
-      rawReview: (p as any)?.attributes?.raw_review || '',
-      insightSummary: (p as any)?.attributes?.insight_summary || ''
-    });
+      linkUrl: (p as any)?.linkUrl ?? att?.link_url ?? '',
+      mainImage: (p as any)?.mainImage ?? att?.mainImage ?? att?.main_image ?? '',
+      sellingPoints: att?.selling_points ?? (p as any)?.selling_points ?? (Array.isArray((p as any)?.sellingPoints) ? (p as any).sellingPoints : (typeof (p as any)?.sellingPoints === 'string' ? ((p as any).sellingPoints as string).split(',').map(s => s.trim()) : [])) ?? [],
+      pros: (p as any)?.pros ?? att?.pros ?? '',
+      cons: (p as any)?.cons ?? att?.cons ?? '',
+      rawReview: (p as any)?.raw_review ?? (p as any)?.rawReview ?? att?.raw_review ?? '',
+      insightSummary: (p as any)?.insight_summary ?? (p as any)?.insightSummary ?? att?.insight_summary ?? '',
+      search_keywords: (p as any)?.search_keywords ?? att?.search_keywords ?? ''
+    };
+    Object.entries(att).forEach(([k, v]) => { if (v !== undefined && v !== null && base[k] === undefined) base[k] = v; });
+    setEditFormData(base);
     setIsEditingProduct(true);
   };
   
@@ -437,25 +340,25 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       sellingPoints: sellingPointsVal,
       pros: editFormData.pros?.trim() || '',
       cons: editFormData.cons?.trim() || '',
-      rawReview: editFormData.rawReview?.trim() || '',
-      insightSummary: editFormData.insightSummary?.trim() || ''
+      raw_review: (editFormData.raw_review ?? editFormData.rawReview)?.trim?.() || '',
+      insight_summary: (editFormData.insight_summary ?? editFormData.insightSummary)?.trim?.() || '',
+      search_keywords: (editFormData.search_keywords ?? '')?.trim?.() || ''
     };
-    // 保留品类动态字段（抽屉编辑未展示的字段从 selectedProduct 带入）
+    // 保留品类动态字段（排除已在上面填写的，避免重复）
+    const EDIT_FIXED_IDS = ['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','selling_points','pros','cons','rawReview','raw_review','insightSummary','insight_summary','search_keywords','categoryId'];
     activeCat?.fields?.forEach(f => {
-      if (['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','pros','cons','rawReview','insightSummary','categoryId'].includes(f.id)) return;
+      if (!f?.id || EDIT_FIXED_IDS.includes(f.id)) return;
       const val = editFormData[f.id] ?? selectedProduct?.[f.id] ?? selectedProduct?.attributes?.[f.id];
       if (val !== undefined && val !== null) updateData[f.id] = val;
     });
 
     setIsSavingEdit(true);
     try {
-      console.log('保存数据:', updateData);
       await onUpdate(selectedProduct.id, updateData);
       setIsEditingProduct(false);
     } catch (error) {
       console.error('保存失败:', error);
       alert(t('save_failed'));
-      // 不关闭编辑态，方便用户重试或取消；父组件会设置 diagnostic 弹层
     } finally {
       setIsSavingEdit(false);
     }
@@ -465,9 +368,9 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
     if (!window.confirm(t('delete_confirm_product', { name: productName }))) return;
     try {
       await onDelete(productId);
-      handleCloseDrawer();
+      handleCloseDetail();
     } catch {
-      // 删除失败时 diagnostic 已由父组件设置，不关闭抽屉
+      // 删除失败时 diagnostic 已由父组件设置
     }
   };
   
@@ -609,7 +512,490 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       </div>
 
       {/* Main View Area */}
-      {filteredProducts.length === 0 ? (
+      {selectedProduct ? (
+        <div className="flex flex-col h-full min-h-0">
+          {/* Header */}
+          <div className="shrink-0 bg-slate-950/95 backdrop-blur-md border-b border-white/10 p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleCloseDetail}
+                  className="size-10 bg-slate-900 border border-white/5 rounded-xl flex items-center justify-center text-slate-500 hover:text-white transition-all"
+                >
+                  <ArrowLeft size={20} />
+                </button>
+                <div>
+                  <h2 className="type-page-title uppercase tracking-normal">
+                    {selectedProduct.brand} {selectedProduct.model}
+                  </h2>
+                  <p className="type-section-subtitle mt-1">
+                    {t('product_detail_title')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Content - 可滚动区域 */}
+          <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-6 space-y-8">
+            {!isEditingProduct ? (
+              <div className="p-8 space-y-12">
+                {/* Product Image */}
+                <div className="aspect-[4/3] bg-slate-950/40 rounded-3xl p-8 relative overflow-hidden flex items-center justify-center">
+                  <div className="w-full h-full rounded-2xl overflow-hidden bg-slate-900/80 shadow-inner flex items-center justify-center">
+                    {(selectedProduct?.mainImage || selectedProduct?.attributes?.mainImage) ? (
+                      <img src={selectedProduct.mainImage || selectedProduct.attributes?.mainImage} className="w-full h-full object-contain p-4" alt="" />
+                    ) : (
+                      <Package size={80} className="text-slate-800" />
+                    )}
+                  </div>
+                </div>
+                
+                {/* 产品基础信息展示 */}
+                <div className="premium-card p-8 border-white/10">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="size-10 bg-slate-600 rounded-xl flex items-center justify-center text-white">
+                      <Package size={20} />
+                    </div>
+                    <div>
+                      <h4 className="type-section-title">{t('basic_product_info')}</h4>
+                      <p className="type-section-subtitle mt-1">{t('basic_product_info')}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
+                        <span className="type-label">{t('category_name')}</span>
+                        <span className="type-value">{categories.find(c => c.id === selectedProduct.categoryId)?.name || selectedProduct.categoryId || t('not_set')}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
+                        <span className="type-label">{t('created_at')}</span>
+                        <span className="type-value">{selectedProduct.createdAt ? new Date(selectedProduct.createdAt).toLocaleDateString() : t('unknown')}</span>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
+                        <span className="type-label">{t('updated_at')}</span>
+                        <span className="type-value">{selectedProduct.updatedAt ? new Date(selectedProduct.updatedAt).toLocaleDateString() : t('unknown')}</span>
+                      </div>
+                      <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
+                        <span className="type-label">{t('main_image')}</span>
+                        <span className="type-value truncate max-w-[150px]">{(selectedProduct?.mainImage || selectedProduct?.attributes?.mainImage || selectedProduct?.attributes?.main_image) ? t('set') : t('not_set')}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="premium-card p-6 border-white/10">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Globe size={16} className="text-slate-500" />
+                      <span className="type-label">{t('channel')}</span>
+                    </div>
+                    <p className="type-value-emphasis">{selectedProduct.channel || t('unknown')}</p>
+                  </div>
+                  <div className="premium-card p-6 border-white/10">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Star size={16} className="text-yellow-500" />
+                      <span className="type-label">{t('rating')}</span>
+                    </div>
+                    <p className="type-value-emphasis">{(Number(selectedProduct?.rating) || 0).toFixed(2)}</p>
+                  </div>
+                  <div className="premium-card p-6 border-white/10">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Zap size={16} className="text-green-500" />
+                      <span className="type-label">{t('price')}</span>
+                    </div>
+                    <p className="type-value-emphasis">¥{(Number(selectedProduct.price) || 0).toLocaleString()}</p>
+                  </div>
+                  {(selectedProduct?.actualPrice != null && selectedProduct?.actualPrice !== '') && (
+                  <div className="premium-card p-6 border-white/10">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Zap size={16} className="text-amber-500" />
+                      <span className="type-label">{t('actual_price')}</span>
+                    </div>
+                    <p className="type-value-emphasis">¥{(Number(selectedProduct.actualPrice) || 0).toLocaleString()}</p>
+                  </div>
+                  )}
+                  <div className="premium-card p-6 border-white/10">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Package size={16} className="text-blue-500" />
+                        <span className="type-label">{t('monthly_sales')}</span>
+                    </div>
+                    <p className="type-value-emphasis">{(Number(selectedProduct.monthlySales) || 0).toLocaleString()}</p>
+                  </div>
+                </div>
+                
+                {/* 口碑与调研 */}
+                {(() => {
+                  const norm = getNormalizedProduct(selectedProduct);
+                  const get = (k: string) => norm[k] ?? (selectedProduct?.attributes as Record<string, unknown>)?.[k];
+                  const items = [
+                    { label: t('pros'), val: get('pros'), type: 'pros' as const },
+                    { label: t('cons'), val: get('cons'), type: 'cons' as const },
+                    { label: t('pain_point'), val: get('raw_review') ?? get('rawReview'), type: 'text' as const },
+                    { label: t('insight_summary'), val: get('insight_summary') ?? get('insightSummary'), type: 'text' as const },
+                    { label: '搜索关键词', val: get('search_keywords'), type: 'text' as const },
+                    { label: t('sell_points'), val: get('selling_points') ?? get('sellingPoints'), type: 'text' as const },
+                  ].filter(x => x.val != null && x.val !== '');
+                  if (items.length === 0) return null;
+                  return (
+                    <div className="premium-card p-8 border-white/10">
+                      <div className="flex items-center gap-4 mb-6">
+                        <div className="size-10 bg-amber-600/20 rounded-xl flex items-center justify-center"><ThumbsUp size={20} className="text-amber-400" /></div>
+                        <div>
+                          <h4 className="type-section-title">{t('customer_voice_analysis')}</h4>
+                          <p className="type-section-subtitle mt-1">{t('pros')} / {t('cons')} / {t('insight_summary')}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        {items.map(({ label, val, type }) => (
+                          <div key={label} className={`p-4 rounded-2xl border ${type === 'pros' ? 'bg-green-500/10 border-green-500/20' : type === 'cons' ? 'bg-red-500/10 border-red-500/20' : 'bg-slate-900/50 border-white/5'}`}>
+                            <div className="flex items-center gap-2 mb-2">
+                              {type === 'pros' && <ThumbsUp size={14} className="text-green-400" />}
+                              {type === 'cons' && <ThumbsDown size={14} className="text-red-400" />}
+                              <span className="type-label">{label}</span>
+                            </div>
+                            <p className="type-value leading-relaxed whitespace-pre-wrap">{typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+                
+                {/* 品类自定义字段 */}
+                {(() => {
+                  const FIXED_IDS = ['brand', 'model', 'linkUrl', 'channel', 'shopName', 'price', 'actualPrice', 'monthlySales', 'rating', 'mainImage', 'link_url', 'main_image', 'pros', 'cons', 'proPoints', 'conPoints', 'raw_review', 'rawReview', 'insight_summary', 'insightSummary', 'selling_points', 'sellingPoints', 'search_keywords'];
+                  const isProsConsLike = (f: ProductField) => ['pros', 'cons', 'proPoints', 'conPoints'].includes(f.id) || /好评|差评|pros|cons/i.test(f.name || '');
+                  const isSearchKeywordsLike = (f: ProductField) => f.id === 'search_keywords' || /搜索关键词/.test(f.name || '');
+                  const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
+                  const customFields = (activeCat?.fields ?? []).filter(f => f?.id && f?.name && !FIXED_IDS.includes(f.id) && !isProsConsLike(f) && !isSearchKeywordsLike(f));
+                  if (customFields.length === 0) return null;
+                  const norm = getNormalizedProduct(selectedProduct);
+                  const getVal = (f: ProductField) => norm[f.id] ?? (selectedProduct?.attributes as Record<string, unknown>)?.[f.id];
+                  const formatVal = (v: unknown, isMultiQty?: boolean): React.ReactNode => {
+                    if (v === undefined || v === null || v === '') return null;
+                    if (Array.isArray(v)) return v.join(', ');
+                    if (typeof v === 'object' && v !== null) {
+                      const entries = Object.entries(v).filter(([, n]) => n != null && n !== '');
+                      if (isMultiQty && entries.length > 0) return entries.map(([k, n]) => `${k}×${n}`).join(' · ');
+                      return JSON.stringify(v, null, 2);
+                    }
+                    return String(v);
+                  };
+                  return (
+                    <div className="premium-card p-8 border-white/10">
+                      <div className="flex items-center gap-4 mb-6">
+                        <div className="size-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
+                          <Database size={20} />
+                        </div>
+                        <div>
+                          <h4 className="type-section-title">{t('category_params')}</h4>
+                          <p className="type-section-subtitle mt-1 text-indigo-400">{activeCat?.name} · {t('category_params_hint')}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        {customFields.map((field) => {
+                          const val = getVal(field);
+                          const isPros = /好评|pros/i.test(field.name) || field.id === 'pros';
+                          const isCons = /差评|cons/i.test(field.name) || field.id === 'cons';
+                          if (isPros || isCons) {
+                            return (
+                              <div key={field.id} className={`p-4 rounded-2xl border ${isPros ? 'bg-green-500/10 border-green-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
+                                <div className="flex items-center gap-2 mb-2">
+                                  {isPros ? <ThumbsUp size={14} className="text-green-400" /> : <ThumbsDown size={14} className="text-red-400" />}
+                                  <span className={`type-label ${isPros ? 'text-green-400' : 'text-red-400'}`}>{field.name}</span>
+                                </div>
+                                <p className={`type-value leading-relaxed ${isPros ? 'text-green-300' : 'text-red-300'}`}>
+                                  {val ? formatVal(val) : <span className="opacity-50 italic">{t('no_data_caption')}</span>}
+                                </p>
+                              </div>
+                            );
+                          }
+                          const isMultiQty = field.type === FieldType.MULTI_SELECT_QUANTITY;
+                          return (
+                            <div key={field.id} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-900/50 rounded-xl border border-white/5">
+                              <div className="md:col-span-1">
+                                <span className="type-label">{field.name}</span>
+                              </div>
+                              <div className="md:col-span-2">
+                                {val ? (typeof val === 'object' && !Array.isArray(val) ? (isMultiQty ? <p className="type-value text-slate-300">{formatVal(val, true)}</p> : <pre className="text-xs font-mono text-slate-300 whitespace-pre-wrap">{formatVal(val)}</pre>) : <p className="type-value text-slate-300">{String(val)}</p>) : <span className="type-caption italic">—</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+                
+                {/* 产品链接 */}
+                {(selectedProduct?.linkUrl || selectedProduct?.attributes?.link_url) && (
+                  <div className="premium-card p-6 border-white/10">
+                    <a
+                      href={String(selectedProduct?.linkUrl || selectedProduct?.attributes?.link_url)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full bg-gradient-to-r from-blue-600 to-purple-600 border border-blue-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:from-blue-700 hover:to-purple-700 transition-all flex items-center justify-center gap-3"
+                    >
+                      <ExternalLink size={18} />
+                      {t('visit_source_link')}
+                    </a>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div id="product-edit-section" className="premium-card p-8 border-white/10">
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="size-10 bg-orange-600 rounded-xl flex items-center justify-center text-white">
+                    <Edit2 size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('edit_product_info')}</h4>
+                    <p className="text-[8px] font-black text-orange-400 uppercase tracking-widest mt-1">{t('edit_product_info')}</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('brand')}</label>
+                    <input 
+                      type="text" 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
+                      value={editFormData.brand || ''}
+                      onChange={e => setEditFormData({...editFormData, brand: e.target.value})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('model')}</label>
+                    <input 
+                      type="text" 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
+                      value={editFormData.model || ''}
+                      onChange={e => setEditFormData({...editFormData, model: e.target.value})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('channel')}</label>
+                    <select 
+                      value={editFormData.channel || ''}
+                      onChange={e => setEditFormData({...editFormData, channel: e.target.value})}
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner appearance-none cursor-pointer"
+                    >
+                      <option value="">{t('select_channel')}</option>
+                      {channelOptionsForForm.map(ch => <option key={ch} value={ch}>{ch}</option>)}
+                    </select>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('shop_name')}</label>
+                    <input 
+                      type="text" 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
+                      value={editFormData.shopName || ''}
+                      onChange={e => setEditFormData({...editFormData, shopName: e.target.value})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('price')}</label>
+                    <input 
+                      type="number" 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
+                      value={editFormData.price ?? ''}
+                      onChange={e => setEditFormData({...editFormData, price: Number(e.target.value)})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('actual_price')}</label>
+                    <input 
+                      type="number" 
+                      step="0.01"
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
+                      value={editFormData.actualPrice ?? ''}
+                      onChange={e => setEditFormData({...editFormData, actualPrice: e.target.value === '' ? '' : Number(e.target.value)})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3 md:col-span-2">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('rating')}</label>
+                    <StarRatingInput value={editFormData.rating ?? ''} onChange={(val) => setEditFormData({...editFormData, rating: val})} />
+                  </div>
+                  
+                  <div className="space-y-3">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('monthly_sales')}</label>
+                    <input 
+                      type="number" 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
+                      value={editFormData.monthlySales ?? ''}
+                      onChange={e => setEditFormData({...editFormData, monthlySales: Number(e.target.value)})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3 md:col-span-2">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('link_url')}</label>
+                    <input 
+                      type="url" 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
+                      value={editFormData.linkUrl || ''}
+                      onChange={e => setEditFormData({...editFormData, linkUrl: e.target.value})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3 md:col-span-2">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('main_image')}</label>
+                    <ImageInput value={editFormData.mainImage || ''} onChange={(val) => setEditFormData({...editFormData, mainImage: val})} t={t} />
+                  </div>
+                  
+                  <div className="space-y-3 md:col-span-2">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('sell_points')}</label>
+                    <input 
+                      type="text" 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
+                      value={Array.isArray(editFormData.sellingPoints) ? editFormData.sellingPoints.join(', ') : editFormData.sellingPoints || ''}
+                      onChange={e => setEditFormData({...editFormData, sellingPoints: e.target.value.split(',').map(s => s.trim()).filter(s => s)})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3 md:col-span-2">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pros')}</label>
+                    <textarea 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
+                      rows={3}
+                      value={editFormData.pros || ''}
+                      onChange={e => setEditFormData({...editFormData, pros: e.target.value})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3 md:col-span-2">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('cons')}</label>
+                    <textarea 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
+                      rows={3}
+                      value={editFormData.cons || ''}
+                      onChange={e => setEditFormData({...editFormData, cons: e.target.value})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3 md:col-span-2">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pain_point')}</label>
+                    <textarea 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
+                      rows={2}
+                      value={editFormData.raw_review ?? editFormData.rawReview ?? ''}
+                      onChange={e => setEditFormData({...editFormData, rawReview: e.target.value, raw_review: e.target.value})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3 md:col-span-2">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('insight_summary')}</label>
+                    <textarea 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
+                      rows={4}
+                      value={editFormData.insight_summary ?? editFormData.insightSummary ?? ''}
+                      onChange={e => setEditFormData({...editFormData, insightSummary: e.target.value, insight_summary: e.target.value})}
+                    />
+                  </div>
+                  
+                  <div className="space-y-3 md:col-span-2">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">搜索关键词</label>
+                    <textarea 
+                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
+                      rows={2}
+                      value={editFormData.search_keywords ?? ''}
+                      onChange={e => setEditFormData({...editFormData, search_keywords: e.target.value})}
+                    />
+                  </div>
+                  
+                  {/* 品类动态字段 */}
+                  {(() => {
+                    const FIXED_IDS = ['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','selling_points','pros','cons','proPoints','conPoints','rawReview','raw_review','insightSummary','insight_summary','search_keywords','categoryId'];
+                    const isProsConsLike = (f: ProductField) => ['pros', 'cons', 'proPoints', 'conPoints'].includes(f.id) || /好评|差评|pros|cons/i.test(f.name || '');
+                    const isSearchKeywordsLike = (f: ProductField) => f.id === 'search_keywords' || /搜索关键词/.test(f.name || '');
+                    const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
+                    const dynFields = (activeCat?.fields ?? []).filter(f => f?.id && f?.name && !FIXED_IDS.includes(f.id) && !isProsConsLike(f) && !isSearchKeywordsLike(f));
+                    if (dynFields.length === 0) return null;
+                    const baseInput = "w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner";
+                    const renderDyn = (f: ProductField) => {
+                      const val = editFormData[f.id] ?? selectedProduct?.[f.id] ?? selectedProduct?.attributes?.[f.id];
+                      const opts = Array.isArray(f?.options) ? f.options : [];
+                      const isWide = f.type === FieldType.MULTI_SELECT_QUANTITY || f.type === FieldType.TEXTAREA || f.type === FieldType.IMAGE;
+                      const fieldVal = f.type === FieldType.MULTI_SELECT_QUANTITY ? (typeof val === 'object' && val !== null ? val : {}) : (val ?? '');
+                      return (
+                        <div key={f.id} className={`space-y-3 ${isWide ? 'md:col-span-2' : ''}`}>
+                          <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{f.name}{f?.required && <span className="text-red-400">*</span>}</label>
+                          {f.type === FieldType.DATE && <input type="date" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
+                          {f.type === FieldType.MULTI_SELECT_QUANTITY && <MultiQuantityInput options={opts} value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} />}
+                          {f.type === FieldType.IMAGE && <ImageInput value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} t={t} />}
+                          {f.type === FieldType.SELECT && (
+                            <select className={`${baseInput} appearance-none pr-10`} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})}>
+                              <option value="">{t('all')}</option>
+                              {opts.map(o => <option key={o} value={o} className="bg-slate-900">{o}</option>)}
+                            </select>
+                          )}
+                          {f.type === FieldType.TEXTAREA && <textarea className={`${baseInput} min-h-[80px] normal-case font-medium`} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
+                          {f.type === FieldType.NUMBER && <input type="number" step="0.01" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value === '' ? '' : parseFloat(e.target.value)})} />}
+                          {f.type === FieldType.RATING && <StarRatingInput value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} />}
+                          {f.type === FieldType.URL && <input type="url" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
+                          {(!f.type || f.type === FieldType.TEXT) && <input type="text" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
+                        </div>
+                      );
+                    };
+                    return (
+                      <>
+                        <div className="md:col-span-2 flex items-center gap-4 pb-4 border-b border-white/5">
+                          <div className="size-10 bg-indigo-600/20 rounded-xl flex items-center justify-center"><Database size={20} className="text-indigo-400" /></div>
+                          <div>
+                            <h5 className="text-[11px] font-black text-white uppercase">{t('category_params')}</h5>
+                            <p className="text-[8px] text-slate-500">{activeCat?.name}</p>
+                          </div>
+                        </div>
+                        {dynFields.map(renderDyn)}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Footer - 底部操作栏 */}
+          <div className="shrink-0 border-t border-white/10 bg-slate-950/95 backdrop-blur-sm p-4 flex flex-wrap gap-3">
+            {canEdit && isEditingProduct && (
+              <button
+                type="button"
+                onClick={handleSaveProduct}
+                disabled={isSavingEdit}
+                className="flex-1 min-w-[120px] bg-green-600 border border-green-500/30 text-white px-5 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-green-700 transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isSavingEdit ? <RefreshCw size={16} className="animate-spin" /> : <Check size={16} />}
+                {isSavingEdit ? t('syncing') : t('save_changes')}
+              </button>
+            )}
+            {canEdit && !isEditingProduct && (
+              <button
+                onClick={handleEditProduct}
+                className="flex-1 min-w-[120px] bg-slate-900 border border-white/10 text-white px-5 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
+              >
+                <Edit2 size={16} />
+                {t('modify')}
+              </button>
+            )}
+            {canEdit && (
+              <button
+                onClick={() => handleDeleteProduct(selectedProduct.id, `${selectedProduct.brand} ${selectedProduct.model}`)}
+                className="flex-1 min-w-[120px] bg-red-600 border border-red-500/30 text-white px-5 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-2"
+              >
+                <Trash2 size={16} />
+                {t('delete')}
+              </button>
+            )}
+          </div>
+        </div>
+      ) : filteredProducts.length === 0 ? (
         <div className="py-32 flex flex-col items-center justify-center text-slate-700 space-y-4">
            <Layers size={64} className="opacity-20 animate-pulse" />
            <p className="text-[10px] font-black uppercase tracking-[0.5em]">{t('no_data')}</p>
@@ -970,7 +1356,48 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                    </div>
                    
-                   {/* 品类特定字段区域 */}
+                   {/* 编辑时展示：口碑与调研，与详情/抽屉一致，避免后台有数据但表单为空 */}
+                   {editingId && (
+                     <div className="space-y-5 sm:space-y-8">
+                       <div className="flex items-center gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-white/5">
+                         <div className="size-8 sm:size-10 bg-amber-500/10 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0">
+                           <ThumbsUp size={18} className="text-amber-400 sm:w-5 sm:h-5" />
+                         </div>
+                         <div>
+                           <h4 className="text-sm font-black text-white uppercase tracking-widest">{t('customer_voice_analysis')}</h4>
+                           <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">{t('pros')} / {t('cons')} / {t('insight_summary')}</p>
+                         </div>
+                       </div>
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                         <div className="space-y-3 md:col-span-2">
+                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pros')}</label>
+                           <textarea className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 min-h-[80px] normal-case" value={formData.pros ?? ''} onChange={e => setFormData({...formData, pros: e.target.value})} />
+                         </div>
+                         <div className="space-y-3 md:col-span-2">
+                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('cons')}</label>
+                           <textarea className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 min-h-[80px] normal-case" value={formData.cons ?? ''} onChange={e => setFormData({...formData, cons: e.target.value})} />
+                         </div>
+                         <div className="space-y-3 md:col-span-2">
+                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pain_point')}</label>
+                           <textarea className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 min-h-[60px] normal-case" value={formData.raw_review ?? formData.rawReview ?? ''} onChange={e => setFormData({...formData, raw_review: e.target.value, rawReview: e.target.value})} />
+                         </div>
+                         <div className="space-y-3 md:col-span-2">
+                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('insight_summary')}</label>
+                           <textarea className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 min-h-[100px] normal-case" value={formData.insight_summary ?? formData.insightSummary ?? ''} onChange={e => setFormData({...formData, insight_summary: e.target.value, insightSummary: e.target.value})} />
+                         </div>
+                         <div className="space-y-3 md:col-span-2">
+                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">搜索关键词</label>
+                           <textarea className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 min-h-[60px] normal-case" value={formData.search_keywords ?? ''} onChange={e => setFormData({...formData, search_keywords: e.target.value})} />
+                         </div>
+                         <div className="space-y-3 md:col-span-2">
+                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('sell_points')}</label>
+                           <input type="text" className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 normal-case" value={Array.isArray(formData.sellingPoints) ? formData.sellingPoints.join(', ') : (formData.selling_points ?? formData.sellingPoints ?? '')} onChange={e => setFormData({...formData, sellingPoints: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean), selling_points: e.target.value})} />
+                         </div>
+                       </div>
+                     </div>
+                   )}
+                   
+                   {/* 品类特定字段区域（编辑时排除口碑与调研字段，避免重复） */}
                    {activeCategory?.fields && activeCategory.fields.length > 0 && (
                       <div className="space-y-8">
                          <div className="flex items-center gap-4 pb-6 border-b border-white/5">
@@ -984,10 +1411,16 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                          </div>
                          
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {activeCategory.fields.map((field) => {
-                              // 防崩溃：确保 field 对象存在且有必要属性
+                            {activeCategory.fields
+                              .filter((f) => {
+                                if (!f?.id) return false;
+                                const skip = ['pros', 'cons', 'raw_review', 'rawReview', 'insight_summary', 'insightSummary', 'search_keywords', 'selling_points', 'sellingPoints'];
+                                if (skip.includes(f.id)) return false;
+                                if (/搜索关键词/.test(f.name || '')) return false;
+                                return true;
+                              })
+                              .map((field) => {
                               if (!field?.id || !field?.name || !field?.type) return null;
-                              // 多选数量类字段占满宽，避免选项挤在一起
                               const isWide = field.type === FieldType.MULTI_SELECT_QUANTITY || field.type === FieldType.TEXTAREA;
                               return (
                                 <div key={field.id} className={`space-y-3 ${isWide ? 'md:col-span-2' : ''}`}>
@@ -1039,7 +1472,27 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                  </div>
                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                     {canEdit && (
-                      <button onClick={() => { setEditingId(detailedProduct?.id); setFormData({...detailedProduct}); setViewDetailId(null); }} className="p-2 sm:p-3 bg-white/5 text-slate-400 hover:text-[#A3E635] rounded-lg sm:rounded-xl transition-all border border-white/5"><Edit2 size={16} className="sm:w-[18px] sm:h-[18px]" /></button>
+                      <button onClick={() => {
+                        const p = detailedProduct as any;
+                        const att = (typeof p?.attributes === 'string' ? (() => { try { return JSON.parse(p.attributes || '{}'); } catch { return {}; } })() : (p?.attributes ?? {})) as Record<string, unknown>;
+                        const base: Record<string, any> = {
+                          ...p,
+                          linkUrl: p?.linkUrl ?? att?.link_url ?? '',
+                          mainImage: p?.mainImage ?? att?.main_image ?? '',
+                          sellingPoints: att?.selling_points ?? p?.selling_points ?? (typeof p?.sellingPoints === 'string' ? (p.sellingPoints as string).split(',').map((s: string) => s.trim()) : p?.sellingPoints) ?? [],
+                          pros: p?.pros ?? att?.pros ?? '',
+                          cons: p?.cons ?? att?.cons ?? '',
+                          raw_review: p?.raw_review ?? p?.rawReview ?? att?.raw_review ?? '',
+                          rawReview: p?.raw_review ?? p?.rawReview ?? att?.raw_review ?? '',
+                          insight_summary: p?.insight_summary ?? p?.insightSummary ?? att?.insight_summary ?? '',
+                          insightSummary: p?.insight_summary ?? p?.insightSummary ?? att?.insight_summary ?? '',
+                          search_keywords: p?.search_keywords ?? att?.search_keywords ?? ''
+                        };
+                        Object.entries(att).forEach(([k, v]) => { if (v !== undefined && v !== null && base[k] === undefined) base[k] = v; });
+                        setEditingId(p?.id);
+                        setFormData(base);
+                        setViewDetailId(null);
+                      }} className="p-2 sm:p-3 bg-white/5 text-slate-400 hover:text-[#A3E635] rounded-lg sm:rounded-xl transition-all border border-white/5"><Edit2 size={16} className="sm:w-[18px] sm:h-[18px]" /></button>
                     )}
                     <button onClick={() => setViewDetailId(null)} className="p-2 sm:p-3 bg-white/5 text-slate-400 hover:text-white rounded-lg sm:rounded-xl transition-all border border-white/5"><X size={16} className="sm:w-[18px] sm:h-[18px]" /></button>
                  </div>
@@ -1060,19 +1513,55 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                              <p className="text-2xl sm:text-4xl font-black text-[#A3E635] font-num">{(Number(detailedProduct?.monthlySales) || 0).toLocaleString()}</p>
                           </div>
                        </div>
-                       <div className="space-y-4 sm:space-y-6">
-                          {Object.entries(detailedProduct || {}).map(([key, val]) => {
-                             if (['id', 'categoryId', 'createdAt', 'updatedAt', 'updatedBy', 'mainImage', 'price', 'monthlySales', 'model', 'brand', 'channel'].includes(key)) return null;
-                             if (!val) return null;
-                             return (
-                               <div key={key} className="space-y-1 sm:space-y-1.5 text-left">
-                                  <p className="text-[7px] sm:text-[8px] font-black text-slate-700 uppercase tracking-widest">{key}</p>
-                                  <div className="text-[10px] sm:text-[11px] font-medium text-slate-300 leading-relaxed normal-case bg-white/5 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-white/5">
-                                     {typeof val === 'object' ? JSON.stringify(val) : String(val)}
+                       {/* 口碑与调研：好评、差评、关键痛点、洞察、搜索关键词、卖点（统一从解析后的 attributes 取数） */}
+                       {(() => {
+                          const p = getNormalizedProduct(detailedProduct || null) as Record<string, unknown>;
+                          const get = (k: string) => p[k] ?? (detailedProduct as any)?.attributes?.[k];
+                          const blocks = [
+                            { key: 'pros', label: t('pros'), val: get('pros'), highlight: 'green' },
+                            { key: 'cons', label: t('cons'), val: get('cons'), highlight: 'red' },
+                            { key: 'raw_review', label: t('pain_point'), val: get('raw_review') ?? get('rawReview') },
+                            { key: 'insight_summary', label: t('insight_summary'), val: get('insight_summary') ?? get('insightSummary') },
+                            { key: 'search_keywords', label: '搜索关键词', val: get('search_keywords') },
+                            { key: 'selling_points', label: t('sell_points'), val: get('selling_points') ?? get('sellingPoints') },
+                          ];
+                          return (
+                            <div className="space-y-4 sm:space-y-5">
+                              {blocks.filter(b => b.val).map(({ key, label, val, highlight }) => (
+                                <div key={key} className={`space-y-1 sm:space-y-1.5 text-left p-3 sm:p-4 rounded-xl border ${highlight === 'green' ? 'bg-green-500/5 border-green-500/20' : highlight === 'red' ? 'bg-red-500/5 border-red-500/20' : 'bg-white/5 border-white/5'}`}>
+                                  <p className="text-[7px] sm:text-[8px] font-black text-slate-600 uppercase tracking-widest">{label}</p>
+                                  <div className="text-[10px] sm:text-[11px] font-medium text-slate-300 leading-relaxed normal-case whitespace-pre-wrap">
+                                    {typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)}
                                   </div>
-                               </div>
-                             );
-                          })}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                       })()}
+                       {/* 规格与其他属性：重量、容量、最大输出等（统一从解析后的 attributes 取数） */}
+                       <div className="space-y-4 sm:space-y-5 pt-4 border-t border-white/5">
+                          {(() => {
+                            const p = getNormalizedProduct(detailedProduct || null) as Record<string, unknown>;
+                            const get = (k: string) => p[k] ?? (detailedProduct as any)?.attributes?.[k];
+                            const LABELS: Record<string, string> = {
+                              weight_g: '重量(g)', capacity_mah: '容量(mAh)', max_output: '最大输出', linkUrl: t('link_url'),
+                              shopName: t('shop_name'), actualPrice: t('actual_price'), rating: t('rating'),
+                              placement: '上架位置', form_factor: '形态', price_tier: '价格带', review_count: '评价数',
+                              selling_point_type: '卖点类型', differentiation: '差异化', bundle: '配件/套装', warranty: '保修', packaging: '包装',
+                              period: '记录日期', dataReliability: '数据可信度', remark: '备注',
+                            };
+                            const skip = new Set(['id', 'categoryId', 'createdAt', 'updatedAt', 'updatedBy', 'mainImage', 'price', 'monthlySales', 'model', 'brand', 'channel', 'pros', 'cons', 'raw_review', 'rawReview', 'insight_summary', 'insightSummary', 'search_keywords', 'selling_points', 'sellingPoints', 'attributes']);
+                            return Object.entries(p)
+                              .filter(([k, v]) => !skip.has(k) && v !== undefined && v !== null && v !== '')
+                              .map(([key, val]) => (
+                                <div key={key} className="space-y-1 sm:space-y-1.5 text-left">
+                                  <p className="text-[7px] sm:text-[8px] font-black text-slate-700 uppercase tracking-widest">{LABELS[key] || key}</p>
+                                  <div className="text-[10px] sm:text-[11px] font-medium text-slate-300 leading-relaxed normal-case bg-white/5 p-3 sm:p-4 rounded-xl border border-white/5">
+                                    {typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)}
+                                  </div>
+                                </div>
+                              ));
+                          })()}
                        </div>
                     </div>
                  </div>
@@ -1146,465 +1635,6 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
             </button>
           </div>
         </div>
-      )}
-      
-      {/* 简化的侧边抽屉 */}
-      {isDrawerOpen && selectedProduct && (
-        <>
-          {/* Overlay */}
-          <div 
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40 animate-in fade-in duration-300"
-            onClick={handleCloseDrawer}
-          />
-          
-          {/* Drawer - 修复顶部遮挡 */}
-          <div className="fixed right-0 top-0 h-full w-full max-w-2xl bg-slate-950 border-l border-white/10 z-50 animate-in slide-in-from-right duration-500 overflow-hidden">
-            {/* Header - 增加顶部边距防止遮挡 */}
-            <div className="sticky top-0 bg-slate-950/95 backdrop-blur-md border-b border-white/10 p-6 z-10 pt-20 mt-16">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="type-page-title uppercase tracking-normal">
-                    {selectedProduct.brand} {selectedProduct.model}
-                  </h2>
-                  <p className="type-section-subtitle mt-1">
-                    {t('product_detail_title')}
-                  </p>
-                </div>
-                <button 
-                  onClick={handleCloseDrawer}
-                  className="size-12 bg-slate-900 border border-white/5 rounded-xl flex items-center justify-center text-slate-500 hover:text-white transition-all"
-                >
-                  <X size={24} />
-                </button>
-              </div>
-            </div>
-            
-            {/* Content - 修复底部间距和滚动 */}
-            <div className="h-full pb-40 overflow-y-auto custom-scrollbar p-6 space-y-8 pt-20">
-              <div className="p-8 space-y-12">
-                {/* Product Image */}
-                <div className="aspect-[4/3] bg-slate-950/40 rounded-3xl p-8 relative overflow-hidden flex items-center justify-center">
-                  <div className="w-full h-full rounded-2xl overflow-hidden bg-slate-900/80 shadow-inner flex items-center justify-center">
-                    {(selectedProduct?.mainImage || selectedProduct?.attributes?.mainImage) ? (
-                      <img src={selectedProduct.mainImage || selectedProduct.attributes?.mainImage} className="w-full h-full object-contain p-4" alt="" />
-                    ) : (
-                      <Package size={80} className="text-slate-800" />
-                    )}
-                  </div>
-                </div>
-                
-                {/* 产品基础信息展示 - 遵循 typography 规范 */}
-                <div className="premium-card p-8 border-white/10">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="size-10 bg-slate-600 rounded-xl flex items-center justify-center text-white">
-                      <Package size={20} />
-                    </div>
-                    <div>
-                      <h4 className="type-section-title">{t('basic_product_info')}</h4>
-                      <p className="type-section-subtitle mt-1">{t('basic_product_info')}</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="type-label">{t('category_name')}</span>
-                        <span className="type-value">{categories.find(c => c.id === selectedProduct.categoryId)?.name || selectedProduct.categoryId || t('not_set')}</span>
-                      </div>
-                      <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="type-label">{t('created_at')}</span>
-                        <span className="type-value">{selectedProduct.createdAt ? new Date(selectedProduct.createdAt).toLocaleDateString() : t('unknown')}</span>
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="type-label">{t('updated_at')}</span>
-                        <span className="type-value">{selectedProduct.updatedAt ? new Date(selectedProduct.updatedAt).toLocaleDateString() : t('unknown')}</span>
-                      </div>
-                      <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="type-label">{t('main_image')}</span>
-                        <span className="type-value truncate max-w-[150px]">{(selectedProduct?.mainImage || selectedProduct?.attributes?.mainImage || selectedProduct?.attributes?.main_image) ? t('set') : t('not_set')}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="premium-card p-6 border-white/10">
-                    <div className="flex items-center gap-3 mb-4">
-                      <Globe size={16} className="text-slate-500" />
-                      <span className="type-label">{t('channel')}</span>
-                    </div>
-                    <p className="type-value-emphasis">{selectedProduct.channel || t('unknown')}</p>
-                  </div>
-                  <div className="premium-card p-6 border-white/10">
-                    <div className="flex items-center gap-3 mb-4">
-                      <Star size={16} className="text-yellow-500" />
-                      <span className="type-label">{t('rating')}</span>
-                    </div>
-                    <p className="type-value-emphasis">{(Number(selectedProduct?.rating) || 0).toFixed(2)}</p>
-                  </div>
-                  <div className="premium-card p-6 border-white/10">
-                    <div className="flex items-center gap-3 mb-4">
-                      <Zap size={16} className="text-green-500" />
-                      <span className="type-label">{t('price')}</span>
-                    </div>
-                    <p className="type-value-emphasis">¥{(Number(selectedProduct.price) || 0).toLocaleString()}</p>
-                  </div>
-                  {(selectedProduct?.actualPrice != null && selectedProduct?.actualPrice !== '') && (
-                  <div className="premium-card p-6 border-white/10">
-                    <div className="flex items-center gap-3 mb-4">
-                      <Zap size={16} className="text-amber-500" />
-                      <span className="type-label">{t('actual_price')}</span>
-                    </div>
-                    <p className="type-value-emphasis">¥{(Number(selectedProduct.actualPrice) || 0).toLocaleString()}</p>
-                  </div>
-                  )}
-                  <div className="premium-card p-6 border-white/10">
-                    <div className="flex items-center gap-3 mb-4">
-                      <Package size={16} className="text-blue-500" />
-                        <span className="type-label">{t('monthly_sales')}</span>
-                    </div>
-                    <p className="type-value-emphasis">{(Number(selectedProduct.monthlySales) || 0).toLocaleString()}</p>
-                  </div>
-                </div>
-                
-                {/* 品类自定义字段 - 按后台配置顺序展示，使用用户创建字段名称 */}
-                {(() => {
-                  const FIXED_IDS = ['brand', 'model', 'linkUrl', 'channel', 'shopName', 'price', 'actualPrice', 'monthlySales', 'rating', 'mainImage', 'link_url', 'main_image'];
-                  const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
-                  const customFields = (activeCat?.fields ?? []).filter(f => f?.id && f?.name && !FIXED_IDS.includes(f.id));
-                  if (customFields.length === 0) return null;
-                  const getVal = (f: ProductField) => selectedProduct?.[f.id] ?? selectedProduct?.attributes?.[f.id];
-                  const formatVal = (v: unknown, isMultiQty?: boolean): React.ReactNode => {
-                    if (v === undefined || v === null || v === '') return null;
-                    if (Array.isArray(v)) return v.join(', ');
-                    if (typeof v === 'object' && v !== null) {
-                      const entries = Object.entries(v).filter(([, n]) => n != null && n !== '');
-                      if (isMultiQty && entries.length > 0) return entries.map(([k, n]) => `${k}×${n}`).join(' · ');
-                      return JSON.stringify(v, null, 2);
-                    }
-                    return String(v);
-                  };
-                  return (
-                    <div className="premium-card p-8 border-white/10">
-                      <div className="flex items-center gap-4 mb-6">
-                        <div className="size-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
-                          <Database size={20} />
-                        </div>
-                        <div>
-                          <h4 className="type-section-title">{t('category_params')}</h4>
-                          <p className="type-section-subtitle mt-1 text-indigo-400">{activeCat?.name} · {t('category_params_hint')}</p>
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        {customFields.map((field) => {
-                          const val = getVal(field);
-                          const isPros = /好评|pros/i.test(field.name) || field.id === 'pros';
-                          const isCons = /差评|cons/i.test(field.name) || field.id === 'cons';
-                          if (isPros || isCons) {
-                            return (
-                              <div key={field.id} className={`p-4 rounded-2xl border ${isPros ? 'bg-green-500/10 border-green-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
-                                <div className="flex items-center gap-2 mb-2">
-                                  {isPros ? <ThumbsUp size={14} className="text-green-400" /> : <ThumbsDown size={14} className="text-red-400" />}
-                                  <span className={`type-label ${isPros ? 'text-green-400' : 'text-red-400'}`}>{field.name}</span>
-                                </div>
-                                <p className={`type-value leading-relaxed ${isPros ? 'text-green-300' : 'text-red-300'}`}>
-                                  {val ? formatVal(val) : <span className="opacity-50 italic">{t('no_data_caption')}</span>}
-                                </p>
-                              </div>
-                            );
-                          }
-                          const isMultiQty = field.type === FieldType.MULTI_SELECT_QUANTITY;
-                          return (
-                            <div key={field.id} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-900/50 rounded-xl border border-white/5">
-                              <div className="md:col-span-1">
-                                <span className="type-label">{field.name}</span>
-                              </div>
-                              <div className="md:col-span-2">
-                                {val ? (typeof val === 'object' && !Array.isArray(val) ? (isMultiQty ? <p className="type-value text-slate-300">{formatVal(val, true)}</p> : <pre className="text-xs font-mono text-slate-300 whitespace-pre-wrap">{formatVal(val)}</pre>) : <p className="type-value text-slate-300">{String(val)}</p>) : <span className="type-caption italic">—</span>}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })()}
-                
-                {/* 产品链接 - 固定字段 */}
-                {(selectedProduct?.linkUrl || selectedProduct?.attributes?.link_url) && (
-                  <div className="premium-card p-6 border-white/10">
-                    <a
-                      href={String(selectedProduct?.linkUrl || selectedProduct?.attributes?.link_url)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full bg-gradient-to-r from-blue-600 to-purple-600 border border-blue-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:from-blue-700 hover:to-purple-700 transition-all flex items-center justify-center gap-3"
-                    >
-                      <ExternalLink size={18} />
-                      {t('visit_source_link')}
-                    </a>
-                  </div>
-                )}
-                
-                {isEditingProduct && (
-                  <div id="product-edit-section" className="premium-card p-8 border-white/10">
-                    <div className="flex items-center gap-4 mb-8">
-                      <div className="size-10 bg-orange-600 rounded-xl flex items-center justify-center text-white">
-                        <Edit2 size={20} />
-                      </div>
-                      <div>
-                        <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('edit_product_info')}</h4>
-                        <p className="text-[8px] font-black text-orange-400 uppercase tracking-widest mt-1">{t('edit_product_info')}</p>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('brand')}</label>
-                        <input 
-                          type="text" 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.brand || ''}
-                          onChange={e => setEditFormData({...editFormData, brand: e.target.value})}
-                        />
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('model')}</label>
-                        <input 
-                          type="text" 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.model || ''}
-                          onChange={e => setEditFormData({...editFormData, model: e.target.value})}
-                        />
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('channel')}</label>
-                        <select 
-                          value={editFormData.channel || ''}
-                          onChange={e => setEditFormData({...editFormData, channel: e.target.value})}
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner appearance-none cursor-pointer"
-                        >
-                          <option value="">{t('select_channel')}</option>
-                          {channelOptionsForForm.map(ch => <option key={ch} value={ch}>{ch}</option>)}
-                        </select>
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('shop_name')}</label>
-                        <input 
-                          type="text" 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.shopName || ''}
-                          onChange={e => setEditFormData({...editFormData, shopName: e.target.value})}
-                        />
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('price')}</label>
-                        <input 
-                          type="number" 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.price ?? ''}
-                          onChange={e => setEditFormData({...editFormData, price: Number(e.target.value)})}
-                        />
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('actual_price')}</label>
-                        <input 
-                          type="number" 
-                          step="0.01"
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.actualPrice ?? ''}
-                          onChange={e => setEditFormData({...editFormData, actualPrice: e.target.value === '' ? '' : Number(e.target.value)})}
-                        />
-                      </div>
-                      
-                      <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('rating')}</label>
-                        <StarRatingInput value={editFormData.rating ?? ''} onChange={(val) => setEditFormData({...editFormData, rating: val})} />
-                      </div>
-                      
-                      <div className="space-y-3">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('monthly_sales')}</label>
-                        <input 
-                          type="number" 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.monthlySales ?? ''}
-                          onChange={e => setEditFormData({...editFormData, monthlySales: Number(e.target.value)})}
-                        />
-                      </div>
-                      
-                      <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('link_url')}</label>
-                        <input 
-                          type="url" 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={editFormData.linkUrl || ''}
-                          onChange={e => setEditFormData({...editFormData, linkUrl: e.target.value})}
-                        />
-                      </div>
-                      
-                      <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('main_image')}</label>
-                        <ImageInput value={editFormData.mainImage || ''} onChange={(val) => setEditFormData({...editFormData, mainImage: val})} t={t} />
-                      </div>
-                      
-                      <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('sell_points')}</label>
-                        <input 
-                          type="text" 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                          value={Array.isArray(editFormData.sellingPoints) ? editFormData.sellingPoints.join(', ') : editFormData.sellingPoints || ''}
-                          onChange={e => setEditFormData({...editFormData, sellingPoints: e.target.value.split(',').map(s => s.trim()).filter(s => s)})}
-                        />
-                      </div>
-                      
-                      <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pros')}</label>
-                        <textarea 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
-                          rows={3}
-                          value={editFormData.pros || ''}
-                          onChange={e => setEditFormData({...editFormData, pros: e.target.value})}
-                        />
-                      </div>
-                      
-                      <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('cons')}</label>
-                        <textarea 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
-                          rows={3}
-                          value={editFormData.cons || ''}
-                          onChange={e => setEditFormData({...editFormData, cons: e.target.value})}
-                        />
-                      </div>
-                      
-                      <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pain_point')}</label>
-                        <textarea 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
-                          rows={2}
-                          value={editFormData.rawReview || ''}
-                          onChange={e => setEditFormData({...editFormData, rawReview: e.target.value})}
-                        />
-                      </div>
-                      
-                      <div className="space-y-3 md:col-span-2">
-                        <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('insight_summary')}</label>
-                        <textarea 
-                          className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
-                          rows={4}
-                          value={editFormData.insightSummary || ''}
-                          onChange={e => setEditFormData({...editFormData, insightSummary: e.target.value})}
-                        />
-                      </div>
-                      
-                      {/* 品类动态字段 */}
-                      {(() => {
-                        const FIXED_IDS = ['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','pros','cons','rawReview','insightSummary','categoryId'];
-                        const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
-                        const dynFields = (activeCat?.fields ?? []).filter(f => f?.id && f?.name && !FIXED_IDS.includes(f.id));
-                        if (dynFields.length === 0) return null;
-                        const baseInput = "w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner";
-                        const renderDyn = (f: ProductField) => {
-                          const val = editFormData[f.id] ?? selectedProduct?.[f.id] ?? selectedProduct?.attributes?.[f.id];
-                          const opts = Array.isArray(f?.options) ? f.options : [];
-                          const isWide = f.type === FieldType.MULTI_SELECT_QUANTITY || f.type === FieldType.TEXTAREA || f.type === FieldType.IMAGE;
-                          const fieldVal = f.type === FieldType.MULTI_SELECT_QUANTITY ? (typeof val === 'object' && val !== null ? val : {}) : (val ?? '');
-                          return (
-                            <div key={f.id} className={`space-y-3 ${isWide ? 'md:col-span-2' : ''}`}>
-                              <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{f.name}{f?.required && <span className="text-red-400">*</span>}</label>
-                              {f.type === FieldType.DATE && <input type="date" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
-                              {f.type === FieldType.MULTI_SELECT_QUANTITY && <MultiQuantityInput options={opts} value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} />}
-                              {f.type === FieldType.IMAGE && <ImageInput value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} t={t} />}
-                              {f.type === FieldType.SELECT && (
-                                <select className={`${baseInput} appearance-none pr-10`} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})}>
-                                  <option value="">{t('all')}</option>
-                                  {opts.map(o => <option key={o} value={o} className="bg-slate-900">{o}</option>)}
-                                </select>
-                              )}
-                              {f.type === FieldType.TEXTAREA && <textarea className={`${baseInput} min-h-[80px] normal-case font-medium`} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
-                              {f.type === FieldType.NUMBER && <input type="number" step="0.01" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value === '' ? '' : parseFloat(e.target.value)})} />}
-                              {f.type === FieldType.RATING && <StarRatingInput value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} />}
-                              {f.type === FieldType.URL && <input type="url" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
-                              {(!f.type || f.type === FieldType.TEXT) && <input type="text" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
-                            </div>
-                          );
-                        };
-                        return (
-                          <>
-                            <div className="md:col-span-2 flex items-center gap-4 pb-4 border-b border-white/5">
-                              <div className="size-10 bg-indigo-600/20 rounded-xl flex items-center justify-center"><Database size={20} className="text-indigo-400" /></div>
-                              <div>
-                                <h5 className="text-[11px] font-black text-white uppercase">{t('category_params')}</h5>
-                                <p className="text-[8px] text-slate-500">{activeCat?.name}</p>
-                              </div>
-                            </div>
-                            {dynFields.map(renderDyn)}
-                          </>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                )}
-                
-                {/* Action Buttons - 编辑时：保存 | 取消编辑 | 删除 | 关闭；非编辑：修改 | 删除 | 关闭 */}
-                <div className="flex flex-wrap gap-4">
-                  {canEdit && isEditingProduct && (
-                    <button
-                      type="button"
-                      onClick={handleSaveProduct}
-                      disabled={isSavingEdit}
-                      className="flex-1 min-w-[140px] bg-green-600 border border-green-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-green-700 transition-all flex items-center justify-center gap-3 disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                      {isSavingEdit ? <RefreshCw size={18} className="animate-spin" /> : <Check size={18} />}
-                      {isSavingEdit ? t('syncing') : t('save_changes')}
-                    </button>
-                  )}
-                  {canEdit && (
-                    isEditingProduct ? (
-                      <button
-                        onClick={() => { setIsEditingProduct(false); setEditFormData({}); }}
-                        className="flex-1 min-w-[140px] bg-slate-800 border border-white/10 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-slate-700 transition-all flex items-center justify-center gap-3"
-                      >
-                        <X size={18} />
-                        {t('cancel_edit')}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={handleEditProduct}
-                        className="flex-1 min-w-[140px] bg-slate-900 border border-white/10 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
-                      >
-                        <Edit2 size={18} />
-                        {t('modify')}
-                      </button>
-                    )
-                  )}
-                  {canEdit && (
-                    <button
-                      onClick={() => handleDeleteProduct(selectedProduct.id, `${selectedProduct.brand} ${selectedProduct.model}`)}
-                      className="flex-1 min-w-[140px] bg-red-600 border border-red-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-red-700 transition-all flex items-center justify-center gap-3"
-                    >
-                      <Trash2 size={18} />
-                      {t('delete')}
-                    </button>
-                  )}
-                  <button
-                    onClick={handleCloseDrawer}
-                    className="flex-1 min-w-[140px] bg-slate-900 border border-white/10 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-3"
-                  >
-                    <X size={18} />
-                    {t('close')}
-                  </button>
-                </div>
-                
-                {/* External Link - 删除重复部分 */}
-              </div>
-            </div>
-          </div>
-        </>
       )}
     </div>
   );

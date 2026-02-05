@@ -29,7 +29,7 @@ function getExtension(mime: string): string {
   return map[mime] || 'jpg';
 }
 
-export type UploadImageOptions = { signal?: AbortSignal };
+export type UploadImageOptions = { signal?: AbortSignal; token?: string };
 
 export async function uploadImageToStorage(value: string, options?: UploadImageOptions): Promise<string> {
   if (!value?.trim()) return '';
@@ -41,7 +41,7 @@ export async function uploadImageToStorage(value: string, options?: UploadImageO
     return v;
   }
 
-  // base64：转为 Blob 上传
+  // base64：转为 Blob 上传（走 Supabase 客户端，无需 token）。加超时避免卡死
   if (v.startsWith('data:image/')) {
     if (v.length > MAX_BASE64_SIZE) {
       throw new Error('图片过大，请压缩后重试（建议 < 2MB）');
@@ -50,18 +50,25 @@ export async function uploadImageToStorage(value: string, options?: UploadImageO
     const mime = v.match(/:(.*?);/)?.[1] || 'image/png';
     const ext = getExtension(mime);
     const path = `main/${crypto.randomUUID()}.${ext}`;
-    const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
-      contentType: mime,
-      upsert: true,
-    });
-    if (error) throw new Error(error.message);
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-    return data.publicUrl;
+    const UPLOAD_MS = 15000;
+    const uploadPromise = (async () => {
+      const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
+        contentType: mime,
+        upsert: true,
+      });
+      if (error) throw new Error(error.message);
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      return data.publicUrl;
+    })();
+    const timeoutPromise = new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error('upload_timeout')), UPLOAD_MS)
+    );
+    return Promise.race([uploadPromise, timeoutPromise]);
   }
 
-  // 外部 URL：通过 API 拉取并上传（getAuthToken 带超时与一次重试，与保存产品共用缓存）
+  // 外部 URL：通过 API 拉取并上传（优先使用传入的 token，避免与保存产品重复 getSession）
   if (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('//')) {
-    const token = await getAuthToken({ timeoutMs: 12000, retryOnce: true });
+    const token = options?.token ?? await getAuthToken({ timeoutMs: 20000, retryOnce: true });
     const fetchOpts: RequestInit = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },

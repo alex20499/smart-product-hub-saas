@@ -60,9 +60,7 @@
 | 32 | 配件/套装内容 | attributes.bundle | |
 | 33 | 保修/售后承诺 | attributes.warranty | |
 | 34 | 包装/礼盒 | attributes.packaging | |
-| 35 | 图片风格(主图) | mainImage | 可能有 =DISPIMG 公式 |
-| 36 | 备注 | attributes.notes | |
-| 37 | 数据来源可信度 | attributes.dataReliability | 高/中/低 |
+| 35 | 图片风格(主图) | mainImage | 可能有 =DISPIMG 公式 
 
 **特殊值**：
 

@@ -1,11 +1,12 @@
 /**
- * 短时复用 token，避免主图上传 + 保存产品连续两次 getSession 导致超时。
- * 带超时与一次重试，消化偶发网络抖动。
+ * 短时复用 token，避免主图上传 + 保存产品连续多次 getSession 导致超时。
+ * 单次超时 20s，最多 3 次重试，缓存 60s，适配 Supabase 冷启动与弱网。
  */
 import { supabase } from './supabase';
 
-const CACHE_TTL_MS = 30_000; // 30 秒内复用
-const DEFAULT_TIMEOUT_MS = 12_000; // 单次 getSession 超时 12 秒
+const CACHE_TTL_MS = 60_000; // 60 秒内复用，覆盖整次「上传+保存」流程
+const DEFAULT_TIMEOUT_MS = 20_000; // 单次 getSession 超时 20 秒
+const MAX_ATTEMPTS = 3; // 最多尝试 3 次
 
 const SESSION_TIMEOUT_MSG = '获取登录状态超时，请检查网络或刷新重试';
 
@@ -29,20 +30,20 @@ export type GetAuthTokenOptions = {
 };
 
 /**
- * 获取当前登录 token。优先返回缓存（30s 内）；否则调 getSession，超时则重试一次。
+ * 获取当前登录 token。优先返回缓存（60s 内）；否则调 getSession，超时则最多重试 2 次（共 3 次）。
  * @throws Error('获取登录状态超时，请检查网络或刷新重试')
  * @throws Error('请先登录')
  */
 export async function getAuthToken(options?: GetAuthTokenOptions): Promise<string> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const retryOnce = options?.retryOnce !== false;
+  const attempts = options?.retryOnce !== false ? MAX_ATTEMPTS : 1;
 
   if (isCacheValid()) {
     return cache!.token;
   }
 
   let lastErr: unknown;
-  for (let attempt = 0; attempt < (retryOnce ? 2 : 1); attempt++) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     try {
       const session = await getSessionWithTimeout(timeoutMs);
       const token = session?.data?.session?.access_token;
@@ -53,10 +54,10 @@ export async function getAuthToken(options?: GetAuthTokenOptions): Promise<strin
       return token;
     } catch (e: any) {
       lastErr = e;
+      if (e?.message === 'SESSION_TIMEOUT' && attempt < attempts - 1) {
+        continue;
+      }
       if (e?.message === 'SESSION_TIMEOUT') {
-        if (attempt === 0 && retryOnce) {
-          continue;
-        }
         throw new Error(SESSION_TIMEOUT_MSG);
       }
       throw e;

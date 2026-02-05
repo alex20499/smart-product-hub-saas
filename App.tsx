@@ -72,6 +72,11 @@ const App: React.FC = () => {
 
   const fetchFromCloud = useCallback(async (silent = false) => {
     if (!silent) setIsSyncing(true);
+    const SYNC_TIMEOUT_MS = 25_000;
+    const timeoutId = setTimeout(() => {
+      setIsSyncing(false);
+      console.warn('🔄 同步超时，已取消「同步中」状态');
+    }, SYNC_TIMEOUT_MS);
     try {
       console.log('🔄 开始同步数据...');
       
@@ -127,9 +132,17 @@ const App: React.FC = () => {
 
       console.log('✅ 数据转换完成，品类数量:', categoriesWithFields.length);
 
-      // 转换产品数据，合并固定字段和 attributes
+      // 转换产品数据，合并固定字段和 attributes（Supabase 有时返回 JSONB 为字符串，需解析）
       const productsWithAttributes = cloudProds.map((p: any) => {
-        const attributes = p.attributes || {};
+        let attributes = p.attributes;
+        if (typeof attributes === 'string') {
+          try {
+            attributes = JSON.parse(attributes || '{}');
+          } catch {
+            attributes = {};
+          }
+        }
+        attributes = attributes || {};
         const createdMs = p.created_at ? new Date(p.created_at).getTime() : 0;
         const updatedMs = p.updated_at ? new Date(p.updated_at).getTime() : undefined;
         // 先展开 attributes，再用 DB 固定列覆盖，确保云端数据优先
@@ -166,6 +179,7 @@ const App: React.FC = () => {
       // 防崩溃：即使同步失败也不影响页面显示
       setDiagnostic({ msg: err?.message || tRef.current('sync_failed'), code: 'SYNC_ERROR' });
     } finally {
+      clearTimeout(timeoutId);
       setIsSyncing(false);
     }
   }, []);
@@ -243,6 +257,18 @@ const App: React.FC = () => {
     setIsSyncing(true);
     console.log('[Product Add] 开始');
     try {
+      // 先取 token，整次流程只调一次 getSession，避免上传后再取导致超时
+      let token: string;
+      try {
+        token = await getAuthToken({ timeoutMs: 20000, retryOnce: true });
+      } catch (e: any) {
+        if (e?.message?.includes?.('获取登录状态超时')) {
+          console.error('[Product Add] getSession 超时');
+          setDiagnostic({ msg: e.message, code: 'SESSION_TIMEOUT' });
+        }
+        throw e;
+      }
+
       const { categoryId, ...restData } = data;
       let mainImage = restData.mainImage || '';
       if (mainImage.startsWith('data:image/')) {
@@ -258,7 +284,21 @@ const App: React.FC = () => {
           setDiagnostic({ msg: (e as Error)?.message || t('upload_failed'), code: 'UPLOAD_ERROR' });
           throw e;
         }
+      } else if (mainImage.startsWith('http://') || mainImage.startsWith('https://') || mainImage.startsWith('//')) {
+        try {
+          const { uploadImageToStorage } = await import('./utils/uploadImage');
+          const UPLOAD_TIMEOUT_MS = 30000;
+          mainImage = await Promise.race([
+            uploadImageToStorage(mainImage, { token }),
+            new Promise<never>((_, rej) => setTimeout(() => rej(new Error(t('save_timeout'))), UPLOAD_TIMEOUT_MS)),
+          ]);
+        } catch (e) {
+          console.warn('主图 URL 上传失败:', e);
+          setDiagnostic({ msg: (e as Error)?.message || t('upload_failed'), code: 'UPLOAD_ERROR' });
+          throw e;
+        }
       }
+
       const now = new Date().toISOString();
       
       // 分离核心固定字段和动态字段
@@ -312,16 +352,6 @@ const App: React.FC = () => {
       };
       console.log('[Product Add] payload 已构建, categoryId:', categoryId);
 
-      let token: string;
-      try {
-        token = await getAuthToken({ timeoutMs: 12000, retryOnce: true });
-      } catch (e: any) {
-        if (e?.message?.includes?.('获取登录状态超时')) {
-          console.error('[Product Add] getSession 超时');
-          setDiagnostic({ msg: e.message, code: 'SESSION_TIMEOUT' });
-        }
-        throw e;
-      }
       console.log('[Product Add] 请求 /api/create-product');
       const API_TIMEOUT_MS = 95000;
       const controller = new AbortController();
@@ -364,6 +394,7 @@ const App: React.FC = () => {
     try {
       const { categoryId, ...restData } = data;
       let mainImage = restData.mainImage || '';
+      // 只有data URL才上传，外部URL（http/https）直接存储URL
       if (mainImage.startsWith('data:image/')) {
         try {
           const { uploadImageToStorage } = await import('./utils/uploadImage');
@@ -378,6 +409,7 @@ const App: React.FC = () => {
           throw e;
         }
       }
+      // 外部URL（http/https）直接使用，不上传
       const now = new Date().toISOString();
       
       // 分离核心固定字段和动态字段
@@ -428,15 +460,42 @@ const App: React.FC = () => {
         attributes
       };
 
-      const UPDATE_TIMEOUT_MS = 60000;
-      const updatePromise = supabase.from('products').update(payload).eq('id', id);
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(t('save_timeout'))), UPDATE_TIMEOUT_MS)
-      );
-      const { error } = await Promise.race([updatePromise, timeoutPromise]);
-      if (error) {
-        setDiagnostic({ msg: error.message, code: error.code });
-        throw new Error(error.message);
+      const UPDATE_TIMEOUT_MS = 90000;
+      let lastError: any = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          // 用标准 Promise 包装 Supabase thenable，确保 Promise.race 在任何环境下都能正确超时
+          const updatePromise = new Promise<{ error: any }>((resolve, reject) => {
+            supabase.from('products').update(payload).eq('id', id)
+              .then((result) => {
+                if (result.error) reject(result.error);
+                else resolve(result);
+              })
+              .catch((err) => {
+                reject(err);
+              });
+          });
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              reject(new Error(t('save_timeout')));
+            }, UPDATE_TIMEOUT_MS);
+          });
+          
+          const { error } = await Promise.race([updatePromise, timeoutPromise]);
+          
+          if (!error) {
+            lastError = null;
+            break;
+          }
+          lastError = error;
+        } catch (err: any) {
+          lastError = err;
+        }
+        if (attempt === 1 && lastError) {
+          const msg = lastError?.message || t('update_product_failed');
+          setDiagnostic({ msg, code: 'UPDATE_ERROR' });
+          throw new Error(msg);
+        }
       }
       // 同步列表在后台执行，避免长时间等待导致“请求超时”
       fetchFromCloud(true).catch(() => {});

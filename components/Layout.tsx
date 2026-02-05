@@ -213,6 +213,15 @@ export const Layout: React.FC<LayoutProps> = ({
                      {isSyncing ? t('syncing') : t('cloud_active')}
                    </span>
                  </div>
+                 <button
+                   type="button"
+                   onClick={() => window.location.reload()}
+                   className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/80 border border-white/10 rounded-full text-[7px] font-black text-slate-400 uppercase tracking-widest hover:text-white hover:border-white/20 transition-all"
+                   title={t('force_refresh')}
+                 >
+                   <RefreshCw size={10} />
+                   {t('force_refresh')}
+                 </button>
                </div>
             </div>
           </div>
