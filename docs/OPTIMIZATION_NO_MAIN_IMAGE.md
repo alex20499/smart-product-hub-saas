@@ -32,3 +32,4 @@
 - `LOCAL_TESTING.md`：本地运行与测试
 - `STORAGE_SETUP.md`：存储配置（主图桶仍存在，仅前端不用）
 - `AUTH_UPGRADE.md`：鉴权与升级说明
+- `docs/UX_2.0_ROADMAP.md`：**2.0 体验优化**路线图（当前阶段）

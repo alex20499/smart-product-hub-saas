@@ -14,7 +14,7 @@ import { ProductData, ProductField, Category, FieldType } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, 
   PieChart, Pie, LineChart, Line, CartesianGrid, ScatterChart, Scatter, ZAxis,
-  ReferenceLine
+  ReferenceLine, ReferenceArea
 } from 'recharts';
 
 interface DashboardProps {
@@ -69,16 +69,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
   const channels = useMemo(() => Array.from(new Set(products.map(p => p?.channel).filter(Boolean))).sort(), [products]);
   const brands = useMemo(() => Array.from(new Set(products.map(p => p?.brand).filter(Boolean))).sort(), [products]);
 
+  // 优惠后价格优先：有 actualPrice（到手价/券后）则用，否则用 price
+  const getEffectivePrice = (p: ProductData) => {
+    const v = p?.actualPrice != null && p?.actualPrice !== '' ? Number(p.actualPrice) : Number(p?.price) || 0;
+    return Number.isFinite(v) ? v : 0;
+  };
+
   const marketData = useMemo(() => {
     let data = Array.isArray(products) ? [...products] : [];
     if (selectedCategory !== 'all') data = data.filter(p => p?.categoryId === selectedCategory);
     if (selectedChannel !== 'all') data = data.filter(p => p?.channel === selectedChannel);
     
-    return data.map(p => ({
-      ...p,
-      price: Number(p?.price) || 0,
-      monthlySales: Number(p?.monthlySales) || 0
-    }));
+    return data.map(p => {
+      const effectivePrice = getEffectivePrice(p);
+      return {
+        ...p,
+        price: effectivePrice,
+        monthlySales: Number(p?.monthlySales) || 0
+      };
+    });
   }, [products, selectedCategory, selectedChannel]);
 
   const focusData = useMemo(() => {
@@ -147,6 +156,44 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
     return buckets;
   }, [marketData]);
 
+  // 价格指数区间：以 100 为基准 → 入门 / 主流 / 中端 / 中高端 / 高端
+  const SEGMENT_BANDS = [
+    { key: 'segment_entry', x1: 0, x2: 80, fill: 'rgba(45,212,191,0.06)' },      // 入门
+    { key: 'segment_mainstream', x1: 80, x2: 100, fill: 'rgba(163,230,53,0.06)' }, // 主流
+    { key: 'segment_mid', x1: 100, x2: 120, fill: 'rgba(251,146,60,0.06)' },       // 中端
+    { key: 'segment_mid_high', x1: 120, x2: 150, fill: 'rgba(129,140,248,0.08)' }, // 中高端
+    { key: 'segment_high', x1: 150, x2: 400, fill: 'rgba(244,114,182,0.06)' }      // 高端
+  ] as const;
+
+  const getSegmentKey = (priceIndex: number): string => {
+    if (priceIndex < 80) return 'segment_entry';
+    if (priceIndex < 100) return 'segment_mainstream';
+    if (priceIndex < 120) return 'segment_mid';
+    if (priceIndex < 150) return 'segment_mid_high';
+    return 'segment_high';
+  };
+
+  // 产品价格指数定位：同品类同平台下，每个产品一个点，X=价格指数(100=均价)，Y=销量，占位高端/中高端/中端/主流/入门
+  const productPriceIndexData = useMemo(() => {
+    if (marketData.length === 0) return [];
+    const marketAvgPrice = marketBasics.avgPrice || 1;
+    return marketData.map(p => {
+      const price = p?.price || 0;
+      const priceIndex = marketAvgPrice > 0 ? (price / marketAvgPrice) * 100 : 100;
+      const idx = Math.round(priceIndex * 10) / 10;
+      const segmentKey = getSegmentKey(idx);
+      return {
+        id: p?.id,
+        name: p?.model || t('unnamed_product'),
+        brand: p?.brand || t('unknown_brand'),
+        priceIndex: idx,
+        segmentKey,
+        monthlySales: p?.monthlySales || 0,
+        price: p?.price ?? 0
+      };
+    });
+  }, [marketData, marketBasics, t]);
+
   const COLORS = ['#A3E635', '#818CF8', '#FB923C', '#38BDF8', '#F472B6', '#2DD4BF'];
 
   const renderCustomizedPieLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, name }: any) => {
@@ -177,6 +224,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
       );
     }
     return null;
+  };
+
+  const ProductPriceIndexTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const p = payload[0].payload as { name: string; brand: string; priceIndex: number; segmentKey: string; monthlySales: number; price: number };
+    return (
+      <div className="bg-slate-950/98 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-xl text-left min-w-[200px]">
+        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 border-b border-white/5 pb-2">{t('value_positioning')}</p>
+        <p className="text-[11px] font-black text-white mb-1">{p?.name || '—'}</p>
+        <p className="text-[9px] font-black text-[#818CF8] mb-2">{p?.brand || '—'}</p>
+        <p className="text-[10px] font-black text-slate-400 flex justify-between"><span>{t('price_index')}:</span> <span className="text-[#A3E635]">{p?.priceIndex ?? 0}</span></p>
+        <p className="text-[10px] font-black text-slate-400 flex justify-between"><span>{t('price_index_segment')}:</span> <span>{p?.segmentKey ? t(p.segmentKey) : '—'}</span></p>
+        <p className="text-[10px] font-black text-slate-400 flex justify-between"><span>{t('sales')}:</span> <span>{(p?.monthlySales ?? 0).toLocaleString()}</span></p>
+      </div>
+    );
   };
 
   const RatingBarTooltip = ({ active, payload }: any) => {
@@ -379,6 +441,45 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
               </div>
           </div>
       </div>
+
+      {/* 产品价格指数定位：同品类同平台，所有产品 X=价格指数(100=均价) Y=销量，五档占位 入门/主流/中端/中高端/高端 */}
+      {productPriceIndexData.length > 0 && (
+        <div className="premium-card p-10 lg:p-14 text-left border-white/5 min-w-0 flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-slate-950 rounded-xl flex items-center justify-center text-[#818CF8] shadow-inner"><Target size={18} /></div>
+              <div>
+                <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('value_positioning')}</h4>
+                <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mt-1">{t('value_positioning_hint')}</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {SEGMENT_BANDS.map((band) => (
+                <span key={band.key} className="px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-wider text-slate-500" style={{ backgroundColor: band.fill }}>{t(band.key)}</span>
+              ))}
+            </div>
+          </div>
+          <SafeChartContainer height={360}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+              <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" />
+                <XAxis type="number" dataKey="priceIndex" name={t('price_index')} domain={[0, 'auto']} axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 10, fontWeight: 900 }} />
+                <YAxis type="number" dataKey="monthlySales" name={t('sales')} axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 10, fontWeight: 900 }} />
+                <Tooltip content={<ProductPriceIndexTooltip />} cursor={{ strokeDasharray: '3 3' }} />
+                {SEGMENT_BANDS.map((band) => (
+                  <ReferenceArea key={band.key} x1={band.x1} x2={band.x2} fill={band.fill} strokeOpacity={0} />
+                ))}
+                <ReferenceLine x={100} stroke="rgba(163,230,53,0.4)" strokeDasharray="4 4" strokeWidth={1.5} />
+                <Scatter name="Product" data={productPriceIndexData}>
+                  {productPriceIndexData.map((entry, index) => (
+                    <Cell key={entry?.id ?? index} fill={entry?.brand === selectedBrand ? '#A3E635' : COLORS[index % COLORS.length]} fillOpacity={entry?.brand === selectedBrand ? 1 : 0.75} />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          </SafeChartContainer>
+        </div>
+      )}
 
       {/* 评分分布 */}
       {marketData.length > 0 && (

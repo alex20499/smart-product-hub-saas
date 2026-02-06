@@ -691,9 +691,17 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
           </div>
         </div>
       ) : filteredProducts.length === 0 ? (
-        <div className="py-32 flex flex-col items-center justify-center text-slate-700 space-y-4">
-           <Layers size={64} className="opacity-20 animate-pulse" />
-           <p className="text-[10px] font-black uppercase tracking-[0.5em]">{t('no_data')}</p>
+        <div className="py-24 sm:py-32 flex flex-col items-center justify-center text-center px-6 space-y-6">
+           <div className="size-20 sm:size-24 rounded-2xl bg-slate-900/80 border border-white/5 flex items-center justify-center">
+             <Package size={40} className="text-slate-600" />
+           </div>
+           <p className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-500">{t('no_data')}</p>
+           <p className="text-[11px] font-medium text-slate-600 max-w-sm">{t('empty_inventory_hint')}</p>
+           {canEdit && (
+             <button onClick={handleAddClick} className="mt-2 flex items-center gap-2 bg-[#A3E635] text-slate-950 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest hover:opacity-90 transition-opacity">
+               <Plus size={16} /> {t('new_entry')}
+             </button>
+           )}
         </div>
       ) : (
         <div className="premium-card border-white/5 overflow-hidden">

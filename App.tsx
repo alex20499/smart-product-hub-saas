@@ -22,6 +22,7 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [diagnostic, setDiagnostic] = useState<{msg: string, code?: string} | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
   const [state, setState] = useState<AppState>(() => {
     const saved = sessionStorage.getItem(STORAGE_KEY);
@@ -175,6 +176,7 @@ const App: React.FC = () => {
         products: productsWithAttributes.length > 0 ? productsWithAttributes : prev.products
       }));
       setLastSaved(new Date().toLocaleTimeString());
+      if (!silent) setToast({ message: tRef.current('toast_sync_done'), type: 'success' });
     } catch (err: any) {
       console.error("Cloud Sync Process Error:", err);
       // 防崩溃：即使同步失败也不影响页面显示
@@ -419,6 +421,7 @@ const App: React.FC = () => {
       }
       // 同步列表在后台执行，避免长时间等待导致“请求超时”
       console.log('[Product Add] 成功');
+      setToast({ message: t('toast_saved'), type: 'success' });
       fetchFromCloud(true).catch((err) => {
         console.warn('后台同步失败（不影响当前操作）:', err);
       });
@@ -594,6 +597,7 @@ const App: React.FC = () => {
             continue;
           }
           lastError = null;
+          setToast({ message: t('toast_saved'), type: 'success' });
           break;
         } catch (err: any) {
           clearTimeout(timeoutId);
@@ -628,6 +632,7 @@ const App: React.FC = () => {
         throw new Error(error.message);
       }
       await fetchFromCloud(true);
+      setToast({ message: t('toast_deleted'), type: 'success' });
     } finally {
       setIsSyncing(false);
     }
@@ -833,6 +838,12 @@ const App: React.FC = () => {
     document.documentElement.lang = state.language;
   }, [state.language]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(id);
+  }, [toast]);
+
   // 等 session 恢复完成后再决定显示登录页，避免有有效 session 时短暂闪出登录框
   if (!authChecked) {
     return (
@@ -852,6 +863,13 @@ const App: React.FC = () => {
       isSyncing={isSyncing}
     >
       <div className="h-full relative">
+        {toast && (
+          <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] animate-in fade-in slide-in-from-bottom-4 duration-300">
+            <div className={`px-6 py-3 rounded-2xl shadow-2xl border text-sm font-bold uppercase tracking-widest ${toast.type === 'success' ? 'bg-[#A3E635] text-slate-950 border-[#A3E635]' : 'bg-red-500/90 text-white border-red-500'}`}>
+              {toast.message}
+            </div>
+          </div>
+        )}
         {diagnostic && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 sm:p-6 overflow-y-auto max-h-[100dvh] bg-black/60">
              <div className="w-full max-w-lg bg-slate-900 border border-red-500/30 rounded-2xl shadow-2xl overflow-hidden p-4 sm:p-6 space-y-4 sm:space-y-6 animate-in zoom-in-95 duration-200">
