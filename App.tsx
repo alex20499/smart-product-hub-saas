@@ -53,6 +53,7 @@ const App: React.FC = () => {
   });
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const saveInProgressRef = useRef(false);
   const tRef = useRef<(k: string, r?: Record<string, string | number>) => string>(() => '');
   const t = (key: string, replacements?: Record<string, string | number>) => {
     const lang = TRANSLATIONS[state.language];
@@ -184,51 +185,42 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Supabase Auth 会话恢复 + 获取用户角色
+  // Supabase Auth 会话恢复 + 获取用户角色（带超时保护）
   const restoreSession = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) {
-      setState((prev) => ({ ...prev, currentUser: null }));
-      setAuthChecked(true);
-      return;
-    }
-    const { data: profile } = await supabase
-      .from('users')
-      .select('id, username, email, role')
-      .eq('auth_user_id', session.user.id)
-      .single();
-    if (profile) {
-      setState((prev) => ({
-        ...prev,
-        currentUser: {
-          id: profile.id,
-          username: profile.username || profile.email || '',
-          email: profile.email,
-          role: profile.role
-        }
-      }));
-    } else {
-      setState((prev) => ({ ...prev, currentUser: null }));
-    }
-    setAuthChecked(true);
-  }, []);
-
-  useEffect(() => {
-    restoreSession();
-  }, [restoreSession]);
-
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session: Session | null) => {
-      if (!session?.user) {
-        setState((prev) => ({ ...prev, currentUser: null }));
+    const SESSION_TIMEOUT_MS = 10000; // 10秒超时
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('SESSION_TIMEOUT')), SESSION_TIMEOUT_MS);
+    });
+    
+    try {
+      const sessionResult = await Promise.race([
+        supabase.auth.getSession(),
+        timeoutPromise
+      ]) as any;
+      
+      const { data: { session }, error: sessionError } = sessionResult || {};
+      if (sessionError) {
+        console.warn('获取会话失败:', sessionError);
+        setAuthChecked(true);
         return;
       }
-      const { data: profile } = await supabase
-        .from('users')
-        .select('id, username, email, role')
-        .eq('auth_user_id', session.user.id)
-        .single();
-      if (profile) {
+      if (!session?.user) {
+        setState((prev) => ({ ...prev, currentUser: null }));
+        setAuthChecked(true);
+        return;
+      }
+      
+      // 获取用户信息也加超时保护
+      const profileResult = await Promise.race([
+        supabase.from('users').select('id, username, email, role').eq('auth_user_id', session.user.id).single(),
+        timeoutPromise
+      ]) as any;
+      
+      const { data: profile, error: profileError } = profileResult || {};
+      if (profileError) {
+        console.warn('获取用户信息失败:', profileError);
+        setState((prev) => ({ ...prev, currentUser: null }));
+      } else if (profile) {
         setState((prev) => ({
           ...prev,
           currentUser: {
@@ -238,6 +230,51 @@ const App: React.FC = () => {
             role: profile.role
           }
         }));
+      } else {
+        setState((prev) => ({ ...prev, currentUser: null }));
+      }
+    } catch (err: any) {
+      console.error('恢复会话异常:', err);
+      // 超时或其他错误时，仍然设置 authChecked 为 true，避免一直 loading
+      setState((prev) => ({ ...prev, currentUser: null }));
+    } finally {
+      setAuthChecked(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    restoreSession();
+  }, [restoreSession]);
+
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session: Session | null) => {
+      try {
+        if (!session?.user) {
+          setState((prev) => ({ ...prev, currentUser: null }));
+          return;
+        }
+        const { data: profile, error } = await supabase
+          .from('users')
+          .select('id, username, email, role')
+          .eq('auth_user_id', session.user.id)
+          .single();
+        if (error) {
+          console.warn('获取用户信息失败:', error);
+          setState((prev) => ({ ...prev, currentUser: null }));
+        } else if (profile) {
+          setState((prev) => ({
+            ...prev,
+            currentUser: {
+              id: profile.id,
+              username: profile.username || profile.email || '',
+              email: profile.email,
+              role: profile.role
+            }
+          }));
+        }
+      } catch (err) {
+        console.error('Auth 状态变更处理异常:', err);
+        setState((prev) => ({ ...prev, currentUser: null }));
       }
     });
     return () => subscription.unsubscribe();
@@ -248,7 +285,12 @@ const App: React.FC = () => {
     const uid = state.currentUser?.id ?? null;
     if (uid && uid !== prevUserIdRef.current) {
       prevUserIdRef.current = uid;
-      fetchFromCloud();
+      // 延迟执行，避免阻塞初始渲染
+      setTimeout(() => {
+        fetchFromCloud().catch((err) => {
+          console.warn('初始数据同步失败（不影响页面显示）:', err);
+        });
+      }, 100);
     }
     if (!uid) prevUserIdRef.current = null;
   }, [state.currentUser?.id, fetchFromCloud]);
@@ -377,7 +419,9 @@ const App: React.FC = () => {
       }
       // 同步列表在后台执行，避免长时间等待导致“请求超时”
       console.log('[Product Add] 成功');
-      fetchFromCloud(true).catch(() => {});
+      fetchFromCloud(true).catch((err) => {
+        console.warn('后台同步失败（不影响当前操作）:', err);
+      });
     } catch (err: any) {
       console.error('[Product Add] 异常:', err?.name, err?.message);
       const msg = err?.name === 'AbortError' ? t('save_timeout') : (err?.message || t('add_product_failed'));
@@ -390,26 +434,40 @@ const App: React.FC = () => {
   };
 
   const handleProductUpdate = async (id: string, data: any) => {
+    saveInProgressRef.current = true;
     setIsSyncing(true);
     try {
       const { categoryId, ...restData } = data;
       let mainImage = restData.mainImage || '';
-      // 只有data URL才上传，外部URL（http/https）直接存储URL
-      if (mainImage.startsWith('data:image/')) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleProductUpdate',message:'Update mainImage payload',data:{id,restMainImage:restData.mainImage,mainImageValue:mainImage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
+      // 只处理 base64 图片上传，不支持外部 URL（避免 token 超时问题）
+      if (mainImage && mainImage.trim() && mainImage.startsWith('data:image/')) {
+        // base64 图片：上传到 Storage
         try {
           const { uploadImageToStorage } = await import('./utils/uploadImage');
           const UPLOAD_TIMEOUT_MS = 45000;
-          mainImage = await Promise.race([
-            uploadImageToStorage(mainImage),
-            new Promise<never>((_, rej) => setTimeout(() => rej(new Error(t('save_timeout'))), UPLOAD_TIMEOUT_MS)),
-          ]);
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+          try {
+            mainImage = await uploadImageToStorage(mainImage, { signal: controller.signal });
+          } catch (e: any) {
+            if (e?.message === 'upload_timeout' || controller.signal.aborted) {
+              throw new Error('图片上传超时，请检查网络或稍后重试');
+            }
+            throw e;
+          } finally {
+            clearTimeout(timeoutId);
+          }
         } catch (e) {
           console.warn('主图 base64 上传失败:', e);
-          setDiagnostic({ msg: (e as Error)?.message || t('upload_failed'), code: 'UPLOAD_ERROR' });
-          throw e;
+          const errorMsg = (e as Error)?.message || t('upload_failed');
+          setDiagnostic({ msg: errorMsg, code: 'UPLOAD_ERROR' });
+          throw new Error(errorMsg);
         }
       }
-      // 外部URL（http/https）直接使用，不上传
+      // 保留已有的 http/https 主图（例如已上传的 Storage URL 或原有链接），不清空
       const now = new Date().toISOString();
       
       // 分离核心固定字段和动态字段
@@ -430,7 +488,9 @@ const App: React.FC = () => {
         updated_at: now,
         updated_by: (state.currentUser?.id && /^[0-9a-f-]{36}$/i.test(state.currentUser.id)) ? state.currentUser.id : null
       };
-      
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:fixedFields',message:'Fixed fields main_image',data:{id,fixedMainImage:fixedFields.main_image},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       const dynamicFields = { ...restData };
       delete dynamicFields.brand;
       delete dynamicFields.model;
@@ -460,36 +520,84 @@ const App: React.FC = () => {
         attributes
       };
 
-      const UPDATE_TIMEOUT_MS = 90000;
+      const UPDATE_TIMEOUT_MS = 60000;
+      const supabaseUrl = (process.env.SUPABASE_URL || '').trim().replace(/\/$/, '');
+      const anonKey = (process.env.SUPABASE_ANON_KEY || '').trim();
+      if (!supabaseUrl || !anonKey) {
+        setDiagnostic({ msg: '缺少 Supabase 配置', code: 'CONFIG_ERROR' });
+        throw new Error('缺少 Supabase 配置');
+      }
+      // 获取 token：优先使用缓存，失败则直接读取 localStorage，最后才调用 getSession
+      let token: string = '';
+      try {
+        // 方法1：尝试使用 getAuthToken 缓存（快速，5秒超时，不重试）
+        try {
+          token = await getAuthToken({ timeoutMs: 5000, retryOnce: false });
+        } catch {
+          // 缓存未命中，尝试方法2：直接从 localStorage 读取
+          const projectRef = supabaseUrl.match(/https?:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+          const supabaseSessionKey = projectRef ? `sb-${projectRef}-auth-token` : 'supabase.auth.token';
+          const stored = localStorage.getItem(supabaseSessionKey) || localStorage.getItem('supabase.auth.token');
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              token = parsed?.access_token || parsed?.currentSession?.access_token || parsed?.session?.access_token || '';
+            } catch {}
+          }
+          // 方法3：如果 localStorage 也没有，最后尝试 getSession（8秒超时）
+          if (!token) {
+            const sessionController = new AbortController();
+            const sessionTimeoutId = setTimeout(() => sessionController.abort(), 8000);
+            try {
+              const { data: { session }, error: sessionError } = await Promise.race([
+                supabase.auth.getSession(),
+                new Promise<never>((_, reject) => setTimeout(() => reject(new Error('SESSION_TIMEOUT')), 8000))
+              ]) as any;
+              if (sessionError) throw new Error('获取登录状态失败');
+              token = session?.access_token || '';
+            } finally {
+              clearTimeout(sessionTimeoutId);
+            }
+          }
+          if (!token) {
+            throw new Error('请先登录');
+          }
+        }
+      } catch (e: any) {
+        const msg = e?.message === 'SESSION_TIMEOUT' || e?.name === 'AbortError'
+          ? '获取登录状态超时，请检查网络或刷新重试'
+          : (e?.message || '获取登录状态失败，请检查网络或刷新重试');
+        setDiagnostic({ msg, code: 'AUTH_ERROR' });
+        throw new Error(msg);
+      }
       let lastError: any = null;
       for (let attempt = 0; attempt < 2; attempt++) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), UPDATE_TIMEOUT_MS);
         try {
-          // 用标准 Promise 包装 Supabase thenable，确保 Promise.race 在任何环境下都能正确超时
-          const updatePromise = new Promise<{ error: any }>((resolve, reject) => {
-            supabase.from('products').update(payload).eq('id', id)
-              .then((result) => {
-                if (result.error) reject(result.error);
-                else resolve(result);
-              })
-              .catch((err) => {
-                reject(err);
-              });
+          const res = await fetch(`${supabaseUrl}/rest/v1/products?id=eq.${encodeURIComponent(id)}`, {
+            method: 'PATCH',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': anonKey,
+              'Authorization': `Bearer ${token}`,
+              'Prefer': 'return=minimal',
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
           });
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            setTimeout(() => {
-              reject(new Error(t('save_timeout')));
-            }, UPDATE_TIMEOUT_MS);
-          });
-          
-          const { error } = await Promise.race([updatePromise, timeoutPromise]);
-          
-          if (!error) {
-            lastError = null;
-            break;
+          clearTimeout(timeoutId);
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            const errMsg = (errBody as any)?.message || errBody?.error_description || res.statusText || `HTTP ${res.status}`;
+            lastError = new Error(errMsg);
+            continue;
           }
-          lastError = error;
+          lastError = null;
+          break;
         } catch (err: any) {
-          lastError = err;
+          clearTimeout(timeoutId);
+          lastError = err?.name === 'AbortError' ? new Error(t('save_timeout')) : err;
         }
         if (attempt === 1 && lastError) {
           const msg = lastError?.message || t('update_product_failed');
@@ -497,13 +605,16 @@ const App: React.FC = () => {
           throw new Error(msg);
         }
       }
-      // 同步列表在后台执行，避免长时间等待导致“请求超时”
-      fetchFromCloud(true).catch(() => {});
+      // 错峰拉列表：延迟 2.5 秒再同步，且仅当没有新的保存在进行时才拉，避免第二次保存与拉列表抢 Supabase 连接导致卡住
+      setTimeout(() => {
+        if (!saveInProgressRef.current) fetchFromCloud(true).catch(() => {});
+      }, 2500);
     } catch (err: any) {
       console.error('Product update error:', err);
       setDiagnostic({ msg: err?.message || t('update_product_failed'), code: 'UPDATE_ERROR' });
       throw err;
     } finally {
+      saveInProgressRef.current = false;
       setIsSyncing(false);
     }
   };

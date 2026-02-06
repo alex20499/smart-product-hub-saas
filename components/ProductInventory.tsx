@@ -3,16 +3,17 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { 
   Plus, Trash2, X, Package, Edit2, 
-  Image as ImageIcon, Check, LayoutGrid, ChevronDown, 
+  Image as ImageIcon, Check, ChevronDown, 
   ExternalLink, ArrowLeft, Star, Search,
   RefreshCw, Zap, Database, Globe, Tag, 
-  Layout, Layers, Trophy, List, Filter, Eye, MoreHorizontal, Settings,
+  Layout, Layers, Trophy, Filter, Eye, MoreHorizontal, Settings,
   ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, AlertTriangle
 } from 'lucide-react';
 import { ProductData, ProductField, FieldType, User, Category } from '../types';
 import { DEFAULT_CHANNEL_OPTIONS } from '../constants';
 import { getAuthToken } from '../lib/authToken';
 import { ImageInput } from './ImageInput';
+import { ProductEditModal } from './ProductEditModal';
 
 interface ProductInventoryProps {
   products: ProductData[];
@@ -115,7 +116,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   const products = productsProp ?? [];
   const categories = categoriesProp ?? [];
   const currentUser = currentUserProp ?? { id: '', username: '', role: 'viewer' as const };
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid'); // list = 列表/表格视图
+  const [viewMode] = useState<'list'>('list'); // 仅保留列表模式，无 grid
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedChannel, setSelectedChannel] = useState('all');
@@ -128,22 +129,22 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
   
-  // 产品详情/编辑状态
+  // 产品详情状态
   const [selectedProduct, setSelectedProduct] = useState<ProductData | null>(null);
-  const [isEditingProduct, setIsEditingProduct] = useState(false);
-  const [editFormData, setEditFormData] = useState<Record<string, any>>({});
+  const [showEditModal, setShowEditModal] = useState(false);
   
   const [actionsOpenId, setActionsOpenId] = useState<string | null>(null);
   const [actionsAnchorRect, setActionsAnchorRect] = useState<DOMRect | null>(null);
 
   const [pasteParseError, setPasteParseError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // 打开新增弹窗时预取 token，保存时直接用缓存，减少 SESSION_TIMEOUT
   useEffect(() => {
     if (isAddModalOpen) {
-      getAuthToken({ timeoutMs: 20000, retryOnce: true }).catch(() => {});
+      getAuthToken({ timeoutMs: 20000, retryOnce: true }).catch((err) => {
+        console.warn('预取 token 失败（不影响表单使用）:', err);
+      });
     }
   }, [isAddModalOpen]);
 
@@ -251,118 +252,25 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
   
   const handleCloseDetail = () => {
     setSelectedProduct(null);
-    setIsEditingProduct(false);
-    setEditFormData({});
+    setShowEditModal(false);
   };
   
   const handleEditProduct = () => {
     if (!selectedProduct) return;
-    const p = selectedProduct as any;
-    const att = (typeof p?.attributes === 'string' ? (() => { try { return JSON.parse(p.attributes || '{}'); } catch { return {}; } })() : (p?.attributes ?? {})) as Record<string, unknown>;
-    const base: Record<string, any> = {
-      ...selectedProduct,
-      linkUrl: p?.linkUrl ?? att?.link_url ?? '',
-      mainImage: p?.mainImage ?? att?.mainImage ?? att?.main_image ?? '',
-      sellingPoints: att?.selling_points ?? p?.selling_points ?? (Array.isArray(p?.sellingPoints) ? p.sellingPoints : (typeof p?.sellingPoints === 'string' ? (p.sellingPoints as string).split(',').map((s: string) => s.trim()) : [])) ?? [],
-      pros: p?.pros ?? att?.pros ?? '',
-      cons: p?.cons ?? att?.cons ?? '',
-      rawReview: p?.raw_review ?? p?.rawReview ?? att?.raw_review ?? '',
-      insightSummary: p?.insight_summary ?? p?.insightSummary ?? att?.insight_summary ?? '',
-      search_keywords: p?.search_keywords ?? att?.search_keywords ?? ''
-    };
-    Object.entries(att).forEach(([k, v]) => { if (v !== undefined && v !== null && base[k] === undefined) base[k] = v; });
-    setIsEditingProduct(true);
-    setEditFormData(base);
-    if (scrollTimerRef.current) {
-      clearTimeout(scrollTimerRef.current);
-    }
-    scrollTimerRef.current = setTimeout(() => {
-      const editSection = document.getElementById('product-edit-section');
-      if (editSection) editSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      scrollTimerRef.current = null;
-    }, 100);
+    setShowEditModal(true);
   };
 
-  const handleOpenProductForEdit = (p: ProductData) => {
-    setSelectedProduct(p);
-    const raw = (p as any)?.attributes;
-    const att = (typeof raw === 'string' ? (() => { try { return JSON.parse(raw || '{}'); } catch { return {}; } })() : (raw ?? {})) as Record<string, unknown>;
-    const base: Record<string, any> = {
-      ...p,
-      linkUrl: (p as any)?.linkUrl ?? att?.link_url ?? '',
-      mainImage: (p as any)?.mainImage ?? att?.mainImage ?? att?.main_image ?? '',
-      sellingPoints: att?.selling_points ?? (p as any)?.selling_points ?? (Array.isArray((p as any)?.sellingPoints) ? (p as any).sellingPoints : (typeof (p as any)?.sellingPoints === 'string' ? ((p as any).sellingPoints as string).split(',').map(s => s.trim()) : [])) ?? [],
-      pros: (p as any)?.pros ?? att?.pros ?? '',
-      cons: (p as any)?.cons ?? att?.cons ?? '',
-      rawReview: (p as any)?.raw_review ?? (p as any)?.rawReview ?? att?.raw_review ?? '',
-      insightSummary: (p as any)?.insight_summary ?? (p as any)?.insightSummary ?? att?.insight_summary ?? '',
-      search_keywords: (p as any)?.search_keywords ?? att?.search_keywords ?? ''
-    };
-    Object.entries(att).forEach(([k, v]) => { if (v !== undefined && v !== null && base[k] === undefined) base[k] = v; });
-    setEditFormData(base);
-    setIsEditingProduct(true);
+  const handleCloseEditModal = () => {
+    setShowEditModal(false);
   };
   
-  const handleSaveProduct = async () => {
-    if (!selectedProduct) return;
-    if (isSavingEdit) return;
-
-    // 数据验证
-    if (!editFormData.brand?.trim()) {
-      alert(t('brand_required'));
-      return;
-    }
-    if (!editFormData.model?.trim()) {
-      alert(t('model_required'));
-      return;
-    }
-    if (!editFormData.channel?.trim()) {
-      alert(t('channel_required'));
-      return;
-    }
-
-    const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
-    const sellingPointsVal = Array.isArray(editFormData.sellingPoints)
-      ? editFormData.sellingPoints.join(', ')
-      : (editFormData.sellingPoints?.trim?.() || '');
-    const updateData: Record<string, any> = {
-      categoryId: editFormData.categoryId || selectedProduct.categoryId,
-      brand: editFormData.brand?.trim() || '',
-      model: editFormData.model?.trim() || '',
-      channel: editFormData.channel?.trim() || '',
-      shopName: editFormData.shopName?.trim() || '',
-      price: Number(editFormData.price) || 0,
-      actualPrice: editFormData.actualPrice != null && editFormData.actualPrice !== '' ? Number(editFormData.actualPrice) : undefined,
-      rating: Number(editFormData.rating) || 0,
-      monthlySales: Number(editFormData.monthlySales) || 0,
-      linkUrl: editFormData.linkUrl?.trim() || '',
-      mainImage: (typeof editFormData.mainImage === 'string' ? editFormData.mainImage.trim() : editFormData.mainImage) || '',
-      sellingPoints: sellingPointsVal,
-      pros: editFormData.pros?.trim() || '',
-      cons: editFormData.cons?.trim() || '',
-      raw_review: (editFormData.raw_review ?? editFormData.rawReview)?.trim?.() || '',
-      insight_summary: (editFormData.insight_summary ?? editFormData.insightSummary)?.trim?.() || '',
-      search_keywords: (editFormData.search_keywords ?? '')?.trim?.() || ''
-    };
-    // 保留品类动态字段（排除已在上面填写的，避免重复）
-    const EDIT_FIXED_IDS = ['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','selling_points','pros','cons','rawReview','raw_review','insightSummary','insight_summary','search_keywords','categoryId'];
-    activeCat?.fields?.forEach(f => {
-      if (!f?.id || EDIT_FIXED_IDS.includes(f.id)) return;
-      const val = editFormData[f.id] ?? selectedProduct?.[f.id] ?? selectedProduct?.attributes?.[f.id];
-      if (val !== undefined && val !== null) updateData[f.id] = val;
-    });
-
-    setIsSavingEdit(true);
-    try {
-      await onUpdate(selectedProduct.id, updateData);
-      setIsEditingProduct(false);
-    } catch (error) {
-      console.error('保存失败:', error);
-      alert(t('save_failed'));
-    } finally {
-      setIsSavingEdit(false);
-    }
+  const handleEditModalSave = async (id: string, data: any) => {
+    await onUpdate(id, data);
+    setShowEditModal(false);
+    // 刷新产品列表
+    setSelectedProduct(null);
   };
+
   
   const handleDeleteProduct = async (productId: string, productName: string) => {
     if (!window.confirm(t('delete_confirm_product', { name: productName }))) return;
@@ -401,6 +309,9 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       return;
     }
     const finalData = { ...formData, categoryId: activeCategory.id };
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ProductInventory.tsx:handleSubmit',message:'Add/Edit payload',data:{editingId,linkUrl:finalData.linkUrl,mainImage:finalData.mainImage,hasLink:!!finalData.linkUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
+    // #endregion
     setIsSaving(true);
     setPasteParseError(null);
     try {
@@ -468,11 +379,6 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
-           <div className="flex bg-slate-900 p-1 rounded-xl border border-white/5">
-              <button onClick={() => setViewMode('grid')} className={`p-2 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white text-slate-950 shadow-lg' : 'text-slate-500 hover:text-white'}`}><LayoutGrid size={18} /></button>
-              <button onClick={() => setViewMode('list')} className={`p-2 rounded-lg transition-all ${viewMode === 'list' ? 'bg-white text-slate-950 shadow-lg' : 'text-slate-500 hover:text-white'}`}><List size={18} /></button>
-           </div>
-           <div className="h-8 w-px bg-white/5 mx-2"></div>
            {canEdit && (
              <button onClick={handleAddClick} className="flex items-center gap-3 bg-[#A3E635] text-slate-950 px-8 py-3.5 rounded-xl font-black text-[10px] uppercase shadow-[0_10px_30px_rgba(163,230,53,0.2)] hover:scale-105 active:scale-95 transition-all tracking-widest">
                <Plus size={16} /> {t('new_entry')}
@@ -511,6 +417,21 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
         </div>
       </div>
 
+      {/* Product Edit Modal */}
+      {showEditModal && selectedProduct && (
+        <ProductEditModal
+          product={selectedProduct}
+          categories={categories}
+          onSave={handleEditModalSave}
+          onDelete={async (id) => {
+            await onDelete(id);
+            handleCloseDetail();
+          }}
+          onClose={handleCloseEditModal}
+          t={t}
+        />
+      )}
+
       {/* Main View Area */}
       {selectedProduct ? (
         <div className="flex flex-col h-full min-h-0">
@@ -538,18 +459,23 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
           
           {/* Content - 可滚动区域 */}
           <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-6 space-y-8">
-            {!isEditingProduct ? (
-              <div className="p-8 space-y-12">
-                {/* Product Image */}
-                <div className="aspect-[4/3] bg-slate-950/40 rounded-3xl p-8 relative overflow-hidden flex items-center justify-center">
-                  <div className="w-full h-full rounded-2xl overflow-hidden bg-slate-900/80 shadow-inner flex items-center justify-center">
-                    {(selectedProduct?.mainImage || selectedProduct?.attributes?.mainImage) ? (
-                      <img src={selectedProduct.mainImage || selectedProduct.attributes?.mainImage} className="w-full h-full object-contain p-4" alt="" />
-                    ) : (
-                      <Package size={80} className="text-slate-800" />
-                    )}
-                  </div>
-                </div>
+            <div className="p-8 space-y-12">
+                {/* 产品链接优先：在官网查看 */}
+                {(() => {
+                  const att = (selectedProduct?.attributes as any);
+                  const linkUrl = selectedProduct?.linkUrl || att?.linkUrl || att?.link_url || '';
+                  // #region agent log
+                  fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ProductInventory.tsx:detail-link-bar',message:'Detail link resolution',data:{productId:selectedProduct?.id,rootLinkUrl:selectedProduct?.linkUrl,attLinkUrl:att?.link_url,resolved:linkUrl,hasBar:!!linkUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+                  // #endregion
+                  return linkUrl ? (
+                    <div className="flex items-center justify-between p-4 bg-[#A3E635]/10 border border-[#A3E635]/30 rounded-2xl">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('product_link')}</span>
+                      <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#A3E635] text-slate-950 font-black text-[10px] uppercase rounded-xl hover:opacity-90 transition-opacity">
+                        <ExternalLink size={14} /> {t('open_official')}
+                      </a>
+                    </div>
+                  ) : null;
+                })()}
                 
                 {/* 产品基础信息展示 */}
                 <div className="premium-card p-8 border-white/10">
@@ -577,10 +503,6 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
                         <span className="type-label">{t('updated_at')}</span>
                         <span className="type-value">{selectedProduct.updatedAt ? new Date(selectedProduct.updatedAt).toLocaleDateString() : t('unknown')}</span>
-                      </div>
-                      <div className="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg">
-                        <span className="type-label">{t('main_image')}</span>
-                        <span className="type-value truncate max-w-[150px]">{(selectedProduct?.mainImage || selectedProduct?.attributes?.mainImage || selectedProduct?.attributes?.main_image) ? t('set') : t('not_set')}</span>
                       </div>
                     </div>
                   </div>
@@ -744,238 +666,11 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                   </div>
                 )}
               </div>
-            ) : (
-              <div id="product-edit-section" className="premium-card p-8 border-white/10">
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="size-10 bg-orange-600 rounded-xl flex items-center justify-center text-white">
-                    <Edit2 size={20} />
-                  </div>
-                  <div>
-                    <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('edit_product_info')}</h4>
-                    <p className="text-[8px] font-black text-orange-400 uppercase tracking-widest mt-1">{t('edit_product_info')}</p>
-                  </div>
-                </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('brand')}</label>
-                    <input 
-                      type="text" 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                      value={editFormData.brand || ''}
-                      onChange={e => setEditFormData({...editFormData, brand: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('model')}</label>
-                    <input 
-                      type="text" 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                      value={editFormData.model || ''}
-                      onChange={e => setEditFormData({...editFormData, model: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('channel')}</label>
-                    <select 
-                      value={editFormData.channel || ''}
-                      onChange={e => setEditFormData({...editFormData, channel: e.target.value})}
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner appearance-none cursor-pointer"
-                    >
-                      <option value="">{t('select_channel')}</option>
-                      {channelOptionsForForm.map(ch => <option key={ch} value={ch}>{ch}</option>)}
-                    </select>
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('shop_name')}</label>
-                    <input 
-                      type="text" 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                      value={editFormData.shopName || ''}
-                      onChange={e => setEditFormData({...editFormData, shopName: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('price')}</label>
-                    <input 
-                      type="number" 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                      value={editFormData.price ?? ''}
-                      onChange={e => setEditFormData({...editFormData, price: Number(e.target.value)})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('actual_price')}</label>
-                    <input 
-                      type="number" 
-                      step="0.01"
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                      value={editFormData.actualPrice ?? ''}
-                      onChange={e => setEditFormData({...editFormData, actualPrice: e.target.value === '' ? '' : Number(e.target.value)})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3 md:col-span-2">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('rating')}</label>
-                    <StarRatingInput value={editFormData.rating ?? ''} onChange={(val) => setEditFormData({...editFormData, rating: val})} />
-                  </div>
-                  
-                  <div className="space-y-3">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('monthly_sales')}</label>
-                    <input 
-                      type="number" 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                      value={editFormData.monthlySales ?? ''}
-                      onChange={e => setEditFormData({...editFormData, monthlySales: Number(e.target.value)})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3 md:col-span-2">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('link_url')}</label>
-                    <input 
-                      type="url" 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                      value={editFormData.linkUrl || ''}
-                      onChange={e => setEditFormData({...editFormData, linkUrl: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3 md:col-span-2">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('main_image')}</label>
-                    <ImageInput value={editFormData.mainImage || ''} onChange={(val) => setEditFormData({...editFormData, mainImage: val})} t={t} />
-                  </div>
-                  
-                  <div className="space-y-3 md:col-span-2">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('sell_points')}</label>
-                    <input 
-                      type="text" 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner" 
-                      value={Array.isArray(editFormData.sellingPoints) ? editFormData.sellingPoints.join(', ') : editFormData.sellingPoints || ''}
-                      onChange={e => setEditFormData({...editFormData, sellingPoints: e.target.value.split(',').map(s => s.trim()).filter(s => s)})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3 md:col-span-2">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pros')}</label>
-                    <textarea 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
-                      rows={3}
-                      value={editFormData.pros || ''}
-                      onChange={e => setEditFormData({...editFormData, pros: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3 md:col-span-2">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('cons')}</label>
-                    <textarea 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
-                      rows={3}
-                      value={editFormData.cons || ''}
-                      onChange={e => setEditFormData({...editFormData, cons: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3 md:col-span-2">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pain_point')}</label>
-                    <textarea 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
-                      rows={2}
-                      value={editFormData.raw_review ?? editFormData.rawReview ?? ''}
-                      onChange={e => setEditFormData({...editFormData, rawReview: e.target.value, raw_review: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3 md:col-span-2">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('insight_summary')}</label>
-                    <textarea 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
-                      rows={4}
-                      value={editFormData.insight_summary ?? editFormData.insightSummary ?? ''}
-                      onChange={e => setEditFormData({...editFormData, insightSummary: e.target.value, insight_summary: e.target.value})}
-                    />
-                  </div>
-                  
-                  <div className="space-y-3 md:col-span-2">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">搜索关键词</label>
-                    <textarea 
-                      className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner resize-none" 
-                      rows={2}
-                      value={editFormData.search_keywords ?? ''}
-                      onChange={e => setEditFormData({...editFormData, search_keywords: e.target.value})}
-                    />
-                  </div>
-                  
-                  {/* 品类动态字段 */}
-                  {(() => {
-                    const FIXED_IDS = ['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','selling_points','pros','cons','proPoints','conPoints','rawReview','raw_review','insightSummary','insight_summary','search_keywords','categoryId'];
-                    const isProsConsLike = (f: ProductField) => ['pros', 'cons', 'proPoints', 'conPoints'].includes(f.id) || /好评|差评|pros|cons/i.test(f.name || '');
-                    const isSearchKeywordsLike = (f: ProductField) => f.id === 'search_keywords' || /搜索关键词/.test(f.name || '');
-                    const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
-                    const dynFields = (activeCat?.fields ?? []).filter(f => f?.id && f?.name && !FIXED_IDS.includes(f.id) && !isProsConsLike(f) && !isSearchKeywordsLike(f));
-                    if (dynFields.length === 0) return null;
-                    const baseInput = "w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-orange-500/40 transition-all shadow-inner";
-                    const renderDyn = (f: ProductField) => {
-                      const val = editFormData[f.id] ?? selectedProduct?.[f.id] ?? selectedProduct?.attributes?.[f.id];
-                      const opts = Array.isArray(f?.options) ? f.options : [];
-                      const isWide = f.type === FieldType.MULTI_SELECT_QUANTITY || f.type === FieldType.TEXTAREA || f.type === FieldType.IMAGE;
-                      const fieldVal = f.type === FieldType.MULTI_SELECT_QUANTITY ? (typeof val === 'object' && val !== null ? val : {}) : (val ?? '');
-                      return (
-                        <div key={f.id} className={`space-y-3 ${isWide ? 'md:col-span-2' : ''}`}>
-                          <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{f.name}{f?.required && <span className="text-red-400">*</span>}</label>
-                          {f.type === FieldType.DATE && <input type="date" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
-                          {f.type === FieldType.MULTI_SELECT_QUANTITY && <MultiQuantityInput options={opts} value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} />}
-                          {f.type === FieldType.IMAGE && <ImageInput value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} t={t} />}
-                          {f.type === FieldType.SELECT && (
-                            <select className={`${baseInput} appearance-none pr-10`} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})}>
-                              <option value="">{t('all')}</option>
-                              {opts.map(o => <option key={o} value={o} className="bg-slate-900">{o}</option>)}
-                            </select>
-                          )}
-                          {f.type === FieldType.TEXTAREA && <textarea className={`${baseInput} min-h-[80px] normal-case font-medium`} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
-                          {f.type === FieldType.NUMBER && <input type="number" step="0.01" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value === '' ? '' : parseFloat(e.target.value)})} />}
-                          {f.type === FieldType.RATING && <StarRatingInput value={fieldVal} onChange={v => setEditFormData({...editFormData, [f.id]: v})} />}
-                          {f.type === FieldType.URL && <input type="url" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
-                          {(!f.type || f.type === FieldType.TEXT) && <input type="text" className={baseInput} value={fieldVal} onChange={e => setEditFormData({...editFormData, [f.id]: e.target.value})} />}
-                        </div>
-                      );
-                    };
-                    return (
-                      <>
-                        <div className="md:col-span-2 flex items-center gap-4 pb-4 border-b border-white/5">
-                          <div className="size-10 bg-indigo-600/20 rounded-xl flex items-center justify-center"><Database size={20} className="text-indigo-400" /></div>
-                          <div>
-                            <h5 className="text-[11px] font-black text-white uppercase">{t('category_params')}</h5>
-                            <p className="text-[8px] text-slate-500">{activeCat?.name}</p>
-                          </div>
-                        </div>
-                        {dynFields.map(renderDyn)}
-                      </>
-                    );
-                  })()}
-                </div>
-              </div>
-            )}
           </div>
           
           {/* Footer - 底部操作栏 */}
           <div className="shrink-0 border-t border-white/10 bg-slate-950/95 backdrop-blur-sm p-4 flex flex-wrap gap-3">
-            {canEdit && isEditingProduct && (
-              <button
-                type="button"
-                onClick={handleSaveProduct}
-                disabled={isSavingEdit}
-                className="flex-1 min-w-[120px] bg-green-600 border border-green-500/30 text-white px-5 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-green-700 transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {isSavingEdit ? <RefreshCw size={16} className="animate-spin" /> : <Check size={16} />}
-                {isSavingEdit ? t('syncing') : t('save_changes')}
-              </button>
-            )}
-            {canEdit && !isEditingProduct && (
+            {canEdit && (
               <button
                 onClick={handleEditProduct}
                 className="flex-1 min-w-[120px] bg-slate-900 border border-white/10 text-white px-5 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all flex items-center justify-center gap-2"
@@ -1000,52 +695,6 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
            <Layers size={64} className="opacity-20 animate-pulse" />
            <p className="text-[10px] font-black uppercase tracking-[0.5em]">{t('no_data')}</p>
         </div>
-      ) : viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-           {paginatedProducts.map(p => (
-             <div 
-               key={p.id} 
-               onClick={() => handleProductClick(p)}
-               className="premium-card group relative overflow-hidden flex flex-col cursor-pointer border-white/5 p-0 hover:bg-slate-900/50 transition-all text-left"
-             >
-                {/* 卡片右上角操作菜单 - 下拉通过 Portal 渲染避免 overflow 导致直角阴影 */}
-                <div className="absolute top-3 right-3 z-10" onClick={e => e.stopPropagation()}>
-                  <button 
-                    onClick={(e) => {
-                      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                      setActionsOpenId(actionsOpenId === p.id ? null : p.id);
-                      setActionsAnchorRect(actionsOpenId === p.id ? null : rect);
-                    }} 
-                    className="p-2 rounded-lg bg-slate-900/80 border border-white/10 text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
-                  >
-                    <MoreHorizontal size={16} />
-                  </button>
-                </div>
-                <div className="aspect-[4/3] bg-slate-950/40 p-6 relative overflow-hidden flex items-center justify-center shrink-0">
-                  <div className="w-full h-full rounded-2xl overflow-hidden bg-slate-900/80 shadow-inner flex items-center justify-center group-hover:scale-[1.02] transition-transform duration-500">
-                    {p?.mainImage ? <img src={p.mainImage} className="w-full h-full object-contain p-4" alt="" /> : <Package size={40} className="text-slate-800" />}
-                  </div>
-                </div>
-                <div className="p-6 flex-1 flex flex-col justify-between space-y-6">
-                  <div>
-                    <div className="flex items-center gap-2 mb-2">
-                       <span className="text-[8px] font-black text-[#818CF8] uppercase tracking-widest">{p?.brand || t('unknown_brand')}</span>
-                       <div className="w-1 h-1 rounded-full bg-slate-700"></div>
-                       <span className="text-[8px] font-bold text-slate-500 uppercase">{p?.channel || t('unknown_channel')}</span>
-                    </div>
-                    <h4 className="text-[11px] font-black text-white uppercase tracking-tight line-clamp-2 leading-relaxed group-hover:text-[#A3E635] transition-colors">{p?.model || t('unnamed_product')}</h4>
-                  </div>
-                  <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                    <p className="text-sm font-black text-white font-num">¥{(Number(p?.price) || 0).toLocaleString()}</p>
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#A3E635]/5 rounded-lg border border-[#A3E635]/10">
-                       <Star size={10} className="text-[#A3E635]" fill="currentColor" />
-                       <span className="text-[9px] font-black text-[#A3E635] font-num">{(Number(p?.rating) || 0).toFixed(2)}</span>
-                    </div>
-                  </div>
-                </div>
-             </div>
-           ))}
-        </div>
       ) : (
         <div className="premium-card border-white/5 overflow-hidden">
            <div className="overflow-x-auto">
@@ -1054,18 +703,27 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                     <tr className="bg-slate-900 text-[9px] font-black text-slate-500 uppercase tracking-widest border-b border-white/5">
                        <th className="px-6 py-5">Product</th>
                        <th className="px-6 py-5">Brand/Channel</th>
+                       <th className="px-6 py-5">Link</th>
                        <th className="px-6 py-5">Price</th>
                        <th className="px-6 py-5">Sales</th>
                        <th className="px-6 py-5 text-right">Actions</th>
                     </tr>
                  </thead>
                  <tbody className="divide-y divide-white/5">
-                    {paginatedProducts.map(p => (
+                    {paginatedProducts.map((p, idx) => {
+                      const att = (p as any)?.attributes;
+                      const linkUrl = p?.linkUrl || att?.linkUrl || att?.link_url || '';
+                      // #region agent log
+                      if (idx === 0 && paginatedProducts.length > 0) {
+                        fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ProductInventory.tsx:list-row',message:'List link resolution',data:{productId:p?.id,rootLinkUrl:p?.linkUrl,attLinkUrl:att?.link_url,resolved:linkUrl,hasLink:!!linkUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
+                      }
+                      // #endregion
+                      return (
                       <tr key={p.id} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => handleProductClick(p)}>
                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-4">
-                               <div className="size-10 bg-slate-950 rounded-lg flex items-center justify-center p-1 border border-white/5">
-                                  {p?.mainImage ? <img src={p.mainImage} className="max-w-full max-h-full object-contain" /> : <Package size={16} className="text-slate-700" />}
+                            <div className="flex items-center gap-3">
+                               <div className="size-9 bg-slate-950 rounded-lg flex items-center justify-center border border-white/5 shrink-0">
+                                  <Package size={14} className="text-slate-600" />
                                </div>
                                <span className="text-[10px] font-black text-white uppercase truncate max-w-[200px]">{p?.model || t('unnamed_product')}</span>
                             </div>
@@ -1075,6 +733,15 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                                <span className="text-[9px] font-black text-[#818CF8] uppercase">{p?.brand || t('unknown_brand')}</span>
                                <span className="text-[8px] font-bold text-slate-600 uppercase">{p?.channel || t('unknown_channel')}</span>
                             </div>
+                         </td>
+                         <td className="px-6 py-4" onClick={e => e.stopPropagation()}>
+                            {linkUrl ? (
+                              <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[9px] font-black text-[#A3E635] hover:underline uppercase" onClick={e => e.stopPropagation()}>
+                                <ExternalLink size={12} /> {t('open_official')}
+                              </a>
+                            ) : (
+                              <span className="text-[9px] text-slate-600">—</span>
+                            )}
                          </td>
                          <td className="px-6 py-4 font-num text-[10px] text-white font-black">¥{(Number(p?.price) || 0).toLocaleString()}</td>
                          <td className="px-6 py-4 font-num text-[10px] text-[#A3E635] font-black">{(Number(p?.monthlySales) || 0).toLocaleString()}</td>
@@ -1091,7 +758,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                             </button>
                          </td>
                       </tr>
-                    ))}
+                    ); })}
                  </tbody>
               </table>
            </div>
@@ -1114,7 +781,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                 <Eye size={14} /> {t('view_detail')}
               </button>
               {canEdit && (
-                <button onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); handleOpenProductForEdit(p); }} className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:text-[#A3E635] flex items-center gap-2">
+                <button onClick={() => { setActionsOpenId(null); setActionsAnchorRect(null); setSelectedProduct(p); setShowEditModal(true); }} className="w-full px-4 py-2.5 text-left text-[10px] font-black uppercase tracking-widest text-slate-300 hover:bg-white/5 hover:text-[#A3E635] flex items-center gap-2">
                   <Edit2 size={14} /> {t('modify')}
                 </button>
               )}
@@ -1342,17 +1009,6 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                                />
                             </div>
                          </div>
-                         
-                         <div className="space-y-3 md:col-span-2">
-                            <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
-                               {t('main_image')}
-                            </label>
-                            <ImageInput 
-                              value={formData.mainImage || ''} 
-                              onChange={(val) => setFormData({...formData, mainImage: val})} 
-                              t={t}
-                            />
-                         </div>
                       </div>
                    </div>
                    
@@ -1499,8 +1155,21 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
               </div>
               <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-12 custom-scrollbar min-h-0">
                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-12">
-                    <div className="lg:col-span-5 aspect-square max-h-[280px] sm:max-h-none bg-slate-950 rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-6 lg:p-8 border border-white/5 shadow-inner flex items-center justify-center shrink-0">
-                       {detailedProduct?.mainImage ? <img src={detailedProduct.mainImage} className="max-w-full max-h-full object-contain" alt="" /> : <Package size={48} className="text-slate-800 sm:w-16 sm:h-16" />}
+                    <div className="lg:col-span-5 flex flex-col justify-center gap-4 min-h-[160px] sm:min-h-[200px] bg-slate-950/50 rounded-2xl sm:rounded-[2.5rem] p-6 sm:p-8 border border-white/5 shrink-0">
+                       {(() => {
+                         const att = (detailedProduct as any)?.attributes;
+                         const linkUrl = detailedProduct?.linkUrl || att?.linkUrl || att?.link_url || '';
+                         // #region agent log
+                         fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ProductInventory.tsx:viewDetailId-overlay',message:'Overlay link resolution',data:{productId:detailedProduct?.id,rootLinkUrl:detailedProduct?.linkUrl,attLinkUrl:att?.link_url,resolved:linkUrl,hasButton:!!linkUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
+                         // #endregion
+                         return linkUrl ? (
+                           <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-3 px-6 py-4 bg-[#A3E635] text-slate-950 font-black text-[10px] sm:text-[11px] uppercase rounded-2xl hover:opacity-90 transition-opacity">
+                             <ExternalLink size={20} /> {t('open_official')}
+                           </a>
+                         ) : (
+                           <span className="text-[10px] font-black text-slate-600 uppercase">{t('product_link')} {t('not_set')}</span>
+                         );
+                       })()}
                     </div>
                     <div className="lg:col-span-7 space-y-6 sm:space-y-10 min-w-0">
                        <div className="grid grid-cols-2 gap-4 sm:gap-8 border-b border-white/5 pb-6 sm:pb-10">

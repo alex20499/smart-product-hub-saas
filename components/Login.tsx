@@ -68,9 +68,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
 
     const AUTH_TIMEOUT_MS = 15000;
     const loginPromise = onLogin(finalEmail, finalPass);
-    const timeoutPromise = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(t('auth_timeout'))), AUTH_TIMEOUT_MS)
-    );
+    let timeoutId: NodeJS.Timeout | null = null;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error(t('auth_timeout'))), AUTH_TIMEOUT_MS);
+    });
 
     try {
       const result = await Promise.race([loginPromise, timeoutPromise]);
@@ -82,6 +83,9 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
     } catch (err: any) {
       setError(err?.message || t('connection_failed'));
     } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       setIsConnecting(false);
     }
   };

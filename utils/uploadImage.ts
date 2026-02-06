@@ -1,10 +1,9 @@
 /**
  * 上传图片到 Supabase Storage，返回公开 URL
- * - base64/Blob：直接上传
- * - 外部 URL：通过 /api/upload-image-from-url 拉取后上传（使用 getAuthToken 带超时与缓存）
+ * - 仅支持 base64 图片上传（本地文件选择或粘贴）
+ * - 不支持外部 URL，避免 token 超时问题
  */
 import { supabase } from '../lib/supabase';
-import { getAuthToken } from '../lib/authToken';
 
 const BUCKET = 'product-images';
 const MAX_BASE64_SIZE = 4 * 1024 * 1024; // 4MB，超出则压缩或拒绝
@@ -29,7 +28,7 @@ function getExtension(mime: string): string {
   return map[mime] || 'jpg';
 }
 
-export type UploadImageOptions = { signal?: AbortSignal; token?: string };
+export type UploadImageOptions = { signal?: AbortSignal };
 
 export async function uploadImageToStorage(value: string, options?: UploadImageOptions): Promise<string> {
   if (!value?.trim()) return '';
@@ -41,48 +40,39 @@ export async function uploadImageToStorage(value: string, options?: UploadImageO
     return v;
   }
 
-  // base64：转为 Blob 上传（走 Supabase 客户端，无需 token）。加超时避免卡死
-  if (v.startsWith('data:image/')) {
-    if (v.length > MAX_BASE64_SIZE) {
-      throw new Error('图片过大，请压缩后重试（建议 < 2MB）');
-    }
-    const blob = dataURLtoBlob(v);
-    const mime = v.match(/:(.*?);/)?.[1] || 'image/png';
-    const ext = getExtension(mime);
-    const path = `main/${crypto.randomUUID()}.${ext}`;
-    const UPLOAD_MS = 15000;
-    const uploadPromise = (async () => {
-      const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
-        contentType: mime,
-        upsert: true,
-      });
-      if (error) throw new Error(error.message);
-      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      return data.publicUrl;
-    })();
-    const timeoutPromise = new Promise<never>((_, rej) =>
-      setTimeout(() => rej(new Error('upload_timeout')), UPLOAD_MS)
-    );
-    return Promise.race([uploadPromise, timeoutPromise]);
+  // 只支持 base64 图片上传
+  if (!v.startsWith('data:image/')) {
+    throw new Error('仅支持本地上传图片，不支持外部 URL');
   }
 
-  // 外部 URL：通过 API 拉取并上传（优先使用传入的 token，避免与保存产品重复 getSession）
-  if (v.startsWith('http://') || v.startsWith('https://') || v.startsWith('//')) {
-    const token = options?.token ?? await getAuthToken({ timeoutMs: 20000, retryOnce: true });
-    const fetchOpts: RequestInit = {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-      body: JSON.stringify({
-        url: v.startsWith('//') ? 'https:' + v : v,
-      }),
-    };
-    if (options?.signal) fetchOpts.signal = options.signal;
-    const res = await fetch('/api/upload-image-from-url', fetchOpts);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data?.error?.message || '上传失败');
-    if (!data?.url) throw new Error('未返回图片地址');
-    return data.url;
+  if (v.length > MAX_BASE64_SIZE) {
+    throw new Error('图片过大，请压缩后重试（建议 < 2MB）');
   }
 
-  return v;
+  const blob = dataURLtoBlob(v);
+  const mime = v.match(/:(.*?);/)?.[1] || 'image/png';
+  const ext = getExtension(mime);
+  const path = `main/${crypto.randomUUID()}.${ext}`;
+  const UPLOAD_MS = 45000; // 45秒硬超时，避免 upload 永不返回导致一直“同步中”
+
+  const uploadPromise = (async () => {
+    const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
+      contentType: mime,
+      upsert: true,
+    });
+    if (error) throw new Error(error.message);
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+    return data.publicUrl;
+  })();
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new Error('upload_timeout')), UPLOAD_MS);
+  });
+
+  try {
+    return await Promise.race([uploadPromise, timeoutPromise]);
+  } catch (err: any) {
+    if (err?.message === 'upload_timeout') throw err;
+    throw err;
+  }
 }

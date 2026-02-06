@@ -446,8 +446,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                >
                   <div className="flex items-center gap-8 flex-1 w-full">
                      <div className="text-2xl font-black text-slate-800 font-num w-10 group-hover:text-[#A3E635] transition-colors">#{idx + 1}</div>
-                     <div className="size-16 bg-slate-950 rounded-2xl overflow-hidden p-2 border border-white/5 shrink-0">
-                        {product?.mainImage ? <img src={product.mainImage} className="w-full h-full object-contain" alt="" /> : <Package className="text-slate-800 size-full" />}
+                     <div className="size-16 bg-slate-950 rounded-2xl overflow-hidden p-2 border border-white/5 shrink-0 flex items-center justify-center">
+                        <Package className="text-slate-800 size-full" />
                      </div>
                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
@@ -502,12 +502,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
               <div className="detail-modal-content flex-1 overflow-y-auto space-y-12 text-left pb-32 custom-scrollbar min-h-0">
                  {/* 顶部：图片 + 核心信息（与 ProductInventory 一致） */}
                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 lg:gap-12">
-                    <div className="lg:col-span-5 aspect-square max-h-[280px] sm:max-h-none bg-slate-950 rounded-2xl sm:rounded-[2.5rem] p-4 sm:p-6 lg:p-8 border border-white/5 shadow-inner flex items-center justify-center shrink-0">
-                       {(detailedProduct?.mainImage || detailedProduct?.attributes?.mainImage) ? (
-                         <img src={detailedProduct.mainImage || detailedProduct.attributes?.mainImage} className="max-w-full max-h-full object-contain" alt="" />
-                       ) : (
-                         <Package size={48} className="text-slate-800 sm:w-16 sm:h-16" />
-                       )}
+                    <div className="lg:col-span-5 flex flex-col justify-center gap-4 min-h-[160px] sm:min-h-[200px] bg-slate-950/50 rounded-2xl sm:rounded-[2.5rem] p-6 sm:p-8 border border-white/5 shrink-0">
+                       {(() => {
+                         const p = detailedProduct as any;
+                         const att = typeof p?.attributes === 'string' 
+                           ? (() => { try { return JSON.parse(p.attributes || '{}'); } catch { return {}; } })() 
+                           : (p?.attributes ?? {}) as Record<string, unknown>;
+                         const linkUrl = detailedProduct?.linkUrl || att?.link_url || att?.linkUrl || '';
+                         return linkUrl ? (
+                           <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-3 px-6 py-4 bg-[#A3E635] text-slate-950 font-black text-[10px] sm:text-[11px] uppercase rounded-2xl hover:opacity-90 transition-opacity">
+                             <ExternalLink size={20} /> {t('open_official')}
+                           </a>
+                         ) : (
+                           <span className="text-[10px] font-black text-slate-600 uppercase">{t('product_link')} {t('not_set')}</span>
+                         );
+                       })()}
                     </div>
                     <div className="lg:col-span-7 space-y-6 min-w-0">
                        <div className="flex items-center gap-2 flex-wrap">
