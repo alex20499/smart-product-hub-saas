@@ -1,14 +1,14 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
-  Zap, TrendingUp, BarChart3, PieChart as PieIcon, 
+  Zap, TrendingUp, PieChart as PieIcon, 
   ShoppingCart, Award, DollarSign, Globe, Layers,
   ChevronDown, RefreshCw, MessageSquare, 
   Target, Activity, SlidersHorizontal, Table as TableIcon,
   Tag, Percent, Info, ExternalLink, ArrowRight, Star,
   Search, Eye, ChevronRight, LayoutGrid, Package, Layout,
   ArrowLeft, Calendar, ShieldCheck, Database, Lock, Trophy,
-  ThumbsUp, ThumbsDown, AlertTriangle, Brain
+  ThumbsUp, ThumbsDown, AlertTriangle, Brain, GitBranch
 } from 'lucide-react';
 import { ProductData, ProductField, Category, FieldType } from '../types';
 import { 
@@ -58,6 +58,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
   const [leaderboardSort, setLeaderboardSort] = useState<'sales' | 'price' | 'rating'>('sales');
   
   const [activeDetailId, setActiveDetailId] = useState<string | null>(null);
+  const [flowHoverNodeId, setFlowHoverNodeId] = useState<string | null>(null);
 
   // 当产品列表变化且当前详情产品已不存在时，清空详情 ID（如被删除或同步后列表更新）
   useEffect(() => {
@@ -67,12 +68,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
   }, [products, activeDetailId]);
 
   const channels = useMemo(() => Array.from(new Set(products.map(p => p?.channel).filter(Boolean))).sort(), [products]);
-  const brands = useMemo(() => Array.from(new Set(products.map(p => p?.brand).filter(Boolean))).sort(), [products]);
 
-  // 优惠后价格优先：有 actualPrice（到手价/券后）则用，否则用 price
+  // 优惠后价格优先：有 actualPrice（到手价/券后）则用，否则用 price；兼容从 attributes 读
   const getEffectivePrice = (p: ProductData) => {
-    const v = p?.actualPrice != null && p?.actualPrice !== '' ? Number(p.actualPrice) : Number(p?.price) || 0;
+    const raw = p?.actualPrice != null && p?.actualPrice !== '' ? p.actualPrice : p?.price;
+    const v = raw != null && raw !== '' ? Number(raw) : Number((p as any)?.attributes?.actual_price ?? (p as any)?.attributes?.price ?? (p as any)?.price) || 0;
     return Number.isFinite(v) ? v : 0;
+  };
+
+  // 销量：优先表字段 monthlySales，兼容 monthly_sales / attributes，保证三块版块有数可算
+  const getMonthlySales = (p: ProductData) => {
+    const raw = p?.monthlySales ?? (p as any)?.monthly_sales ?? (p as any)?.attributes?.monthly_sales ?? (p as any)?.attributes?.monthlySales;
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.max(0, n) : 0;
   };
 
   const marketData = useMemo(() => {
@@ -82,13 +90,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
     
     return data.map(p => {
       const effectivePrice = getEffectivePrice(p);
+      const monthlySales = getMonthlySales(p);
       return {
         ...p,
         price: effectivePrice,
-        monthlySales: Number(p?.monthlySales) || 0
+        monthlySales
       };
     });
   }, [products, selectedCategory, selectedChannel]);
+
+  // 品牌列表基于当前品类+平台下的 marketData，保证选中的品牌一定在该细分内有数据，三块卡片才能正确联动
+  const brands = useMemo(() => Array.from(new Set(marketData.map(p => p?.brand).filter(Boolean))).sort(), [marketData]);
+
+  useEffect(() => {
+    if (selectedBrand !== 'all' && (brands.length === 0 || !brands.includes(selectedBrand))) {
+      setSelectedBrand('all');
+    }
+  }, [brands, selectedBrand]);
 
   const focusData = useMemo(() => {
     let data = [...marketData];
@@ -140,22 +158,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
     return data;
   }, [marketData, leaderboardSort]);
 
-  const ratingDistributionData = useMemo(() => {
-    const buckets = [
-      { range: '0-1', min: 0, max: 1, count: 0 },
-      { range: '1-2', min: 1, max: 2, count: 0 },
-      { range: '2-3', min: 2, max: 3, count: 0 },
-      { range: '3-4', min: 3, max: 4, count: 0 },
-      { range: '4-5', min: 4, max: 5.01, count: 0 }
-    ];
-    marketData.forEach(p => {
-      const r = Number(p?.rating) || 0;
-      const b = buckets.find(x => r >= x.min && r < x.max);
-      if (b) b.count++;
-    });
-    return buckets;
-  }, [marketData]);
-
   // 价格指数区间：以 100 为基准 → 入门 / 主流 / 中端 / 中高端 / 高端
   const SEGMENT_BANDS = [
     { key: 'segment_entry', x1: 0, x2: 80, fill: 'rgba(45,212,191,0.06)' },      // 入门
@@ -193,6 +195,206 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
       };
     });
   }, [marketData, marketBasics, t]);
+
+  // 渠道·品类对比：全渠道或单渠道下均按品类聚合，K 线展示价格区间与分位，保留多平台/单平台筛选
+  const categoryComparisonData = useMemo(() => {
+    if (marketData.length === 0) return [];
+    const byCat = new Map<string, { sales: number; totalPrice: number; count: number; prices: number[] }>();
+    for (const p of marketData) {
+      const cid = p?.categoryId ?? 'unknown';
+      const cur = byCat.get(cid) ?? { sales: 0, totalPrice: 0, count: 0, prices: [] };
+      const price = p?.price ?? 0;
+      cur.sales += p?.monthlySales ?? 0;
+      cur.totalPrice += price * (p?.monthlySales ?? 0);
+      cur.count += 1;
+      cur.prices.push(price);
+      byCat.set(cid, cur);
+    }
+    const quartile = (arr: number[], q: number) => {
+      const s = [...arr].sort((a, b) => a - b);
+      const i = (s.length - 1) * q;
+      const lo = Math.floor(i);
+      const hi = Math.ceil(i);
+      return lo === hi ? s[lo]! : s[lo]! * (1 - (i - lo)) + s[hi]! * (i - lo);
+    };
+    const catList = Array.from(byCat.entries()).map(([categoryId, agg]) => {
+      const name = categories.find(c => c.id === categoryId)?.name ?? categoryId;
+      const avgPrice = agg.sales > 0 ? agg.totalPrice / agg.sales : 0;
+      const prices = agg.prices.filter(Number.isFinite);
+      const minPrice = prices.length ? Math.min(...prices) : avgPrice;
+      const maxPrice = prices.length ? Math.max(...prices) : avgPrice;
+      const open = prices.length > 1 ? quartile(prices, 0.25) : avgPrice;
+      const close = prices.length > 1 ? quartile(prices, 0.75) : avgPrice;
+      return { categoryId, name, sales: agg.sales, avgPrice, count: agg.count, minPrice, maxPrice, open, close };
+    });
+    return catList.sort((a, b) => b.sales - a.sales);
+  }, [marketData, categories]);
+
+  // 折扣力度：有 actualPrice 的产品算 (price - actualPrice)/price，按渠道求平均
+  const discountByChannelData = useMemo(() => {
+    let base = Array.isArray(products) ? [...products] : [];
+    if (selectedCategory !== 'all') base = base.filter(p => p?.categoryId === selectedCategory);
+    const withDiscount = base.filter(p => {
+      const list = Number(p?.price);
+      const actual = p?.actualPrice != null && p?.actualPrice !== '' ? Number(p.actualPrice) : NaN;
+      return list > 0 && Number.isFinite(actual) && actual < list;
+    });
+    if (withDiscount.length === 0) return [];
+    const byChannel = new Map<string, number[]>();
+    for (const p of withDiscount) {
+      const list = Number(p.price);
+      const actual = Number(p.actualPrice);
+      const rate = (list - actual) / list;
+      const ch = p?.channel ?? 'unknown';
+      if (!byChannel.has(ch)) byChannel.set(ch, []);
+      byChannel.get(ch)!.push(rate);
+    }
+    return Array.from(byChannel.entries()).map(([channel, rates]) => {
+      const avg = rates.reduce((a, b) => a + b, 0) / rates.length;
+      return { channel, avgDiscountPct: avg * 100, count: rates.length };
+    }).sort((a, b) => b.avgDiscountPct - a.avgDiscountPct);
+  }, [products, selectedCategory]);
+
+  // 桑基流图：渠道 → 品类 → 价格带（用当前视图 marketData，支持全渠道/单渠道）
+  const flowSankeyData = useMemo(() => {
+    if (marketData.length === 0) return { nodes: [], links: [], segmentKeys: [] as string[] };
+    const marketAvgPrice = marketBasics.avgPrice || 1;
+    const segmentKeys = ['segment_entry', 'segment_mainstream', 'segment_mid', 'segment_mid_high', 'segment_high'];
+    type Node = { id: string; name: string; layer: number; value: number };
+    const nodes: Node[] = [];
+    const links: { source: string; target: string; value: number }[] = [];
+    const channelSales = new Map<string, number>();
+    const channelCatSales = new Map<string, number>();
+    const catSegmentSales = new Map<string, number>();
+    for (const p of marketData) {
+      const ch = p?.channel ?? 'unknown';
+      const cid = p?.categoryId ?? 'unknown';
+      const catName = categories.find(c => c.id === cid)?.name ?? cid;
+      const price = p?.price ?? 0;
+      const priceIndex = marketAvgPrice > 0 ? (price / marketAvgPrice) * 100 : 100;
+      const seg = getSegmentKey(priceIndex);
+      const sales = p?.monthlySales ?? 0;
+      channelSales.set(ch, (channelSales.get(ch) ?? 0) + sales);
+      const ck = `${ch}|${cid}`;
+      channelCatSales.set(ck, (channelCatSales.get(ck) ?? 0) + sales);
+      const sk = `${ck}|${seg}`;
+      catSegmentSales.set(sk, (catSegmentSales.get(sk) ?? 0) + sales);
+    }
+    const channels = Array.from(channelSales.entries()).sort((a, b) => b[1] - a[1]);
+    const channelCat = Array.from(channelCatSales.entries()).sort((a, b) => b[1] - a[1]);
+    channels.forEach(([ch]) => nodes.push({ id: ch, name: ch, layer: 0, value: channelSales.get(ch) ?? 0 }));
+    channelCat.forEach(([ck]) => {
+      const [ch, cid] = ck.split('|');
+      const name = categories.find(c => c.id === cid)?.name ?? cid;
+      nodes.push({ id: `mid_${ck}`, name, layer: 1, value: channelCatSales.get(ck) ?? 0 });
+      links.push({ source: ch, target: `mid_${ck}`, value: channelCatSales.get(ck) ?? 0 });
+    });
+    segmentKeys.forEach(seg => {
+      const total = channelCat.reduce((acc, [ck]) => acc + (catSegmentSales.get(`${ck}|${seg}`) ?? 0), 0);
+      if (total > 0) nodes.push({ id: seg, name: t(seg), layer: 2, value: total });
+    });
+    channelCat.forEach(([ck]) => {
+      segmentKeys.forEach(seg => {
+        const v = catSegmentSales.get(`${ck}|${seg}`) ?? 0;
+        if (v > 0) links.push({ source: `mid_${ck}`, target: seg, value: v });
+      });
+    });
+    return { nodes, links, segmentKeys };
+  }, [marketData, marketBasics, categories, t]);
+
+  // 节点颜色（参考图：蓝→青→橙 三列）
+  const flowNodeColor = (id: string, layer: number) => {
+    const seg: Record<string, string> = { segment_entry: '#0D9488', segment_mainstream: '#65A30D', segment_mid: '#EA580C', segment_mid_high: '#7C3AED', segment_high: '#DB2777' };
+    if (layer === 0) return '#2563EB';
+    if (layer === 1) return '#0891B2';
+    return seg[id] ?? '#EA580C';
+  };
+
+  // 桑基图布局：带状流线（渐变填充）、层合计（百分比）、每条 link 的 source/target 色
+  const flowLayout = useMemo(() => {
+    const { nodes, links } = flowSankeyData;
+    const nodeGap = 5;
+    const headerH = 36;
+    const titleY = 18;
+    if (nodes.length === 0) return { positions: new Map(), paths: [], ribbons: [], layerTotals: [0, 0, 0], totalSales: 0, maxLink: 0, W: 1120, H: 320, headerH, titleY: 18, labelOffset: 16, colWidth: 40, xByLayer: [134, 560, 930] };
+    const chartH = 260;
+    const W = 1120;
+    const colWidth = 40;
+    const xByLayer = [134, 560, 930];
+    const labelOffset = 16;
+    const byLayer = new Map<number, { id: string; name: string; value: number }[]>();
+    nodes.forEach(n => {
+      const list = byLayer.get(n.layer) ?? [];
+      list.push({ id: n.id, name: n.name, value: n.value });
+      byLayer.set(n.layer, list);
+    });
+    byLayer.forEach(list => list.sort((a, b) => b.value - a.value));
+    const layerTotals = [0, 0, 0] as number[];
+    const positions = new Map<string, { x: number; y: number; w: number; h: number; name: string; value: number; layer: number; pct: number }>();
+    byLayer.forEach((list, layer) => {
+      const total = list.reduce((a, n) => a + n.value, 0) || 1;
+      layerTotals[layer] = total;
+      const nCount = list.length;
+      const gapTotal = (nCount - 1) * nodeGap;
+      const barTotal = chartH - gapTotal;
+      let y = headerH;
+      list.forEach(n => {
+        const h = Math.max(14, (n.value / total) * barTotal);
+        const pct = total > 0 ? (n.value / total) * 100 : 0;
+        positions.set(n.id, { x: xByLayer[layer]! - colWidth / 2, y, w: colWidth, h, name: n.name, value: n.value, layer, pct });
+        y += h + nodeGap;
+      });
+    });
+    const totalSales = layerTotals[0] || 1;
+    const maxLink = Math.max(...links.map(l => l.value), 1);
+    const outflowTotal = new Map<string, number>();
+    const inflowTotal = new Map<string, number>();
+    links.forEach(l => {
+      outflowTotal.set(l.source, (outflowTotal.get(l.source) ?? 0) + l.value);
+      inflowTotal.set(l.target, (inflowTotal.get(l.target) ?? 0) + l.value);
+    });
+    const paths: { d: string; value: number; strokeWidth: number; sourceId: string; targetId: string }[] = [];
+    const ribbons: { d: string; value: number; sourceColor: string; targetColor: string }[] = [];
+    links.forEach(l => {
+      const src = positions.get(l.source);
+      const dst = positions.get(l.target);
+      if (!src || !dst) return;
+      const sx = src.x + src.w;
+      const sy = src.y + src.h / 2;
+      const tx = dst.x;
+      const ty = dst.y + dst.h / 2;
+      const dx = tx - sx;
+      const d = `M ${sx} ${sy} C ${sx + dx * 0.5} ${sy}, ${tx - dx * 0.5} ${ty}, ${tx} ${ty}`;
+      const srcOut = outflowTotal.get(l.source) || 1;
+      const dstIn = inflowTotal.get(l.target) || 1;
+      const widthAtSource = (l.value / srcOut) * src.h;
+      const widthAtTarget = (l.value / dstIn) * dst.h;
+      const strokeWidth = Math.max(4, (widthAtSource + widthAtTarget) / 2);
+      paths.push({ d, value: l.value, strokeWidth, sourceId: l.source, targetId: l.target });
+      const sourceColor = flowNodeColor(l.source, src.layer);
+      const targetColor = flowNodeColor(l.target, dst.layer);
+      const N = 28;
+      const pts: { x: number; y: number }[] = [];
+      const lower: { x: number; y: number }[] = [];
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const mt = 1 - t;
+        const halfWidth = (1 - t) * (widthAtSource / 2) + t * (widthAtTarget / 2);
+        const x = mt * mt * mt * sx + 3 * mt * mt * t * (sx + dx * 0.5) + 3 * mt * t * t * (tx - dx * 0.5) + t * t * t * tx;
+        const y = mt * mt * mt * sy + 3 * mt * mt * t * (sy) + 3 * mt * t * t * (ty) + t * t * t * ty;
+        const dxdt = 3 * mt * mt * ((sx + dx * 0.5) - sx) + 6 * mt * t * ((tx - dx * 0.5) - (sx + dx * 0.5)) + 3 * t * t * (tx - (tx - dx * 0.5));
+        const dydt = 3 * mt * mt * (sy - sy) + 6 * mt * t * (ty - sy) + 3 * t * t * (ty - ty);
+        const len = Math.hypot(dxdt, dydt) || 1;
+        const nx = -dydt / len;
+        const ny = dxdt / len;
+        pts.push({ x: x + nx * halfWidth, y: y + ny * halfWidth });
+        lower.push({ x: x - nx * halfWidth, y: y - ny * halfWidth });
+      }
+      const ribbonD = `M ${pts.map(p => `${p.x} ${p.y}`).join(' L ')} L ${lower.reverse().map(p => `${p.x} ${p.y}`).join(' L ')} Z`;
+      ribbons.push({ d: ribbonD, value: l.value, sourceColor, targetColor });
+    });
+    return { positions, paths, ribbons, layerTotals, totalSales, maxLink, W, H: headerH + chartH + 20, headerH, titleY, labelOffset, colWidth, xByLayer };
+  }, [flowSankeyData]);
 
   const COLORS = ['#A3E635', '#818CF8', '#FB923C', '#38BDF8', '#F472B6', '#2DD4BF'];
 
@@ -241,18 +443,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
     );
   };
 
-  const RatingBarTooltip = ({ active, payload }: any) => {
-    if (!active || !payload?.length) return null;
-    const p = payload[0].payload as { range: string; count: number };
-    return (
-      <div className="bg-slate-950/98 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-xl text-left">
-        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 border-b border-white/5 pb-2">{t('rating_distribution')}</p>
-        <p className="text-[10px] font-black text-white">{p.range} ★</p>
-        <p className="text-[11px] font-black text-[#A3E635] mt-1">{t('count')}: {p.count}</p>
-      </div>
-    );
-  };
-
   const PieShareTooltip = ({ active, payload }: any) => {
     if (!active || !payload?.length) return null;
     const p = payload[0].payload as { name: string; value: number };
@@ -261,6 +451,59 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
         <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 border-b border-white/5 pb-2">{t('category_share')}</p>
         <p className="text-[10px] font-black text-white">{p?.name || '—'}</p>
         <p className="text-[11px] font-black text-[#A3E635] mt-1">{p?.value?.toLocaleString?.() ?? p?.value}</p>
+      </div>
+    );
+  };
+
+  const CategoryCompareTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const p = payload[0].payload as { name: string; sales: number; avgPrice: number; count: number; minPrice?: number; maxPrice?: number; open?: number; close?: number };
+    return (
+      <div className="bg-slate-950/98 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-xl text-left min-w-[200px]">
+        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 border-b border-white/5 pb-2">{t('panel_category_by_channel')}</p>
+        <p className="text-[10px] font-black text-white mb-2">{p?.name || '—'}</p>
+        <p className="text-[10px] font-black text-slate-400 flex justify-between"><span>{t('sales')}:</span> <span className="text-[#A3E635]">{(p?.sales ?? 0).toLocaleString()}</span></p>
+        <p className="text-[10px] font-black text-slate-400 flex justify-between"><span>{t('avg_price')}:</span> <span>¥{(p?.avgPrice ?? 0).toLocaleString()}</span></p>
+        {(p?.minPrice != null && p?.maxPrice != null) && (
+          <p className="text-[9px] font-bold text-slate-500 mt-1">¥{(p.minPrice).toLocaleString()} ~ ¥{(p.maxPrice).toLocaleString()}</p>
+        )}
+        <p className="text-[10px] font-black text-slate-400 flex justify-between"><span>{t('sku_count')}:</span> <span>{p?.count ?? 0}</span></p>
+      </div>
+    );
+  };
+
+  // K 线（蜡烛图）自定义 Bar 形状：影线 min→max，实体 open→close（25%～75% 分位）
+  const CandlestickBar = (props: any) => {
+    const { x, y, width, height, payload, index } = props;
+    const maxPrice = payload?.maxPrice ?? 1;
+    const minPrice = payload?.minPrice ?? 0;
+    const open = payload?.open ?? minPrice;
+    const close = payload?.close ?? maxPrice;
+    if (maxPrice <= 0 || height < 4) return null;
+    const scale = width / maxPrice;
+    const xMin = x + minPrice * scale;
+    const xMax = x + maxPrice * scale;
+    const xOpen = x + Math.min(open, close) * scale;
+    const xClose = x + Math.max(open, close) * scale;
+    const bodyH = Math.max(4, height - 4);
+    const cy = y + height / 2;
+    return (
+      <g>
+        <line x1={xMin} y1={cy} x2={xMax} y2={cy} stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} />
+        <rect x={xOpen} y={y + 2} width={Math.max(2, xClose - xOpen)} height={bodyH} fill="#38BDF8" fillOpacity={0.9} stroke="rgba(255,255,255,0.4)" strokeWidth={1} rx={2} />
+      </g>
+    );
+  };
+
+  const DiscountTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const p = payload[0].payload as { channel: string; avgDiscountPct: number; count: number };
+    return (
+      <div className="bg-slate-950/98 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-xl text-left min-w-[160px]">
+        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-2 border-b border-white/5 pb-2">{t('panel_discount')}</p>
+        <p className="text-[10px] font-black text-white">{p?.channel || '—'}</p>
+        <p className="text-[11px] font-black text-[#A3E635] mt-1">{t('avg_discount_pct')}: {(p?.avgDiscountPct ?? 0).toFixed(1)}%</p>
+        <p className="text-[10px] font-black text-slate-400">{t('sku_count')}: {p?.count ?? 0}</p>
       </div>
     );
   };
@@ -442,6 +685,163 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
           </div>
       </div>
 
+      {/* 渠道·品类对比：全渠道/单渠道均可，K 线展示价格区间，对比更清晰 */}
+      <div className="premium-card p-10 lg:p-14 text-left border-white/5 min-w-0 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 bg-slate-950 rounded-xl flex items-center justify-center text-[#38BDF8] shadow-inner"><Layers size={18} /></div>
+            <div>
+              <h4 className="text-[12px] font-black uppercase tracking-widest text-white">
+                {selectedChannel === 'all' ? t('panel_category_compare_all') : t('panel_category_by_channel')}
+              </h4>
+              <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mt-1">
+                {selectedChannel === 'all' ? t('panel_category_compare_all_hint') : t('panel_category_by_channel_hint')}
+              </p>
+              <p className="text-[7px] font-bold text-slate-500 uppercase tracking-wider mt-0.5">{t('panel_category_candle_hint')}</p>
+            </div>
+          </div>
+        </div>
+        {categoryComparisonData.length > 0 ? (
+          <SafeChartContainer height={Math.max(180, categoryComparisonData.length * 52)}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+              <BarChart
+                data={categoryComparisonData}
+                layout="vertical"
+                margin={{ top: 8, right: 24, bottom: 8, left: 8 }}
+                barCategoryGap="20%"
+                barGap={4}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" />
+                <XAxis
+                  type="number"
+                  dataKey="maxPrice"
+                  domain={[0, (dataMax: number) => Math.ceil((dataMax || 0) * 1.08)]}
+                  tickFormatter={(v) => `¥${(v / 1000).toFixed(0)}k`}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: '#475569', fontSize: 10, fontWeight: 900 }}
+                />
+                <YAxis type="category" dataKey="name" width={100} axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 900 }} />
+                <Tooltip content={<CategoryCompareTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                <Bar dataKey="maxPrice" shape={<CandlestickBar />} isAnimationActive={false} />
+              </BarChart>
+            </ResponsiveContainer>
+          </SafeChartContainer>
+        ) : (
+          <div className="h-[200px] flex flex-col items-center justify-center text-slate-600">
+            <p className="text-[10px] font-black uppercase tracking-widest">{t('no_data')}</p>
+          </div>
+        )}
+      </div>
+
+      {/* 桑基流图：与其他版块一致的留白，版块不显大、图表不显挤 */}
+      {flowSankeyData.nodes.length > 0 && (
+        <div className="premium-card p-10 lg:p-14 text-left border-white/5 min-w-0 flex flex-col overflow-hidden">
+          <div className="flex flex-wrap items-end justify-between gap-4 mb-8">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-inner bg-gradient-to-br from-cyan-500/20 to-teal-500/20 border border-white/5 text-cyan-400"><GitBranch size={18} strokeWidth={2} /></div>
+              <div>
+                <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('panel_flow_sankey')}</h4>
+                <p className="text-[8px] font-bold text-slate-500 uppercase tracking-wider mt-1">{t('panel_flow_sankey_hint')}</p>
+              </div>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{t('sales')}</span>
+              <span className="text-[18px] font-black text-[#A3E635] tabular-nums">{(flowLayout.totalSales ?? 0).toLocaleString()}</span>
+            </div>
+          </div>
+          <div className="w-full overflow-x-auto overflow-y-hidden rounded-2xl bg-slate-900/30 border border-white/5 relative pt-4 pb-5 px-5">
+            <SafeChartContainer height={340}>
+              <svg viewBox={`0 0 ${flowLayout.W} ${flowLayout.H}`} className="w-full h-full min-h-[300px] block" preserveAspectRatio="xMidYMid meet" style={{ minWidth: 1120 }}>
+                <defs>
+                  {flowLayout.ribbons?.map((r, i) => (
+                    <linearGradient key={i} id={`ribbonGrad${i}`} x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor={r.sourceColor} stopOpacity={0.75} />
+                      <stop offset="100%" stopColor={r.targetColor} stopOpacity={0.6} />
+                    </linearGradient>
+                  ))}
+                  <linearGradient id="nodeChannel" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stopColor="#3B82F6" /><stop offset="100%" stopColor="#2563EB" /></linearGradient>
+                  <linearGradient id="nodeCategory" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stopColor="#06B6D4" /><stop offset="100%" stopColor="#0891B2" /></linearGradient>
+                  <filter id="nodeShadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx={0} dy={1} stdDeviation={2} floodOpacity={0.12} /></filter>
+                </defs>
+                <text x={flowLayout.xByLayer?.[0] ?? 134} y={flowLayout.titleY ?? 22} fill="#64748B" fontSize={10} fontWeight={800} textAnchor="middle" className="uppercase tracking-widest">{t('channel')}</text>
+                <text x={flowLayout.xByLayer?.[1] ?? 560} y={flowLayout.titleY ?? 22} fill="#64748B" fontSize={10} fontWeight={800} textAnchor="middle" className="uppercase tracking-widest">{t('category')}</text>
+                <text x={flowLayout.xByLayer?.[2] ?? 930} y={flowLayout.titleY ?? 22} fill="#64748B" fontSize={10} fontWeight={800} textAnchor="middle" className="uppercase tracking-widest">{t('price_index_segment')}</text>
+                {/* 带状流线：渐变填充，从源色到目标色 */}
+                {(flowLayout.ribbons ?? []).map((r, i) => (
+                  <path key={i} d={r.d} fill={`url(#ribbonGrad${i})`} stroke="none" opacity={0.88} />
+                ))}
+                {/* 节点：带百分比、可悬停 */}
+                {Array.from(flowLayout.positions.entries()).map(([id, pos]) => {
+                  const isLeft = pos.layer === 0;
+                  const isRight = pos.layer === 2;
+                  const segColors: Record<string, string> = { segment_entry: '#0D9488', segment_mainstream: '#65A30D', segment_mid: '#EA580C', segment_mid_high: '#7C3AED', segment_high: '#DB2777' };
+                  const fill = isLeft ? 'url(#nodeChannel)' : isRight ? (segColors[id] ?? '#EA580C') : 'url(#nodeCategory)';
+                  const labelX = pos.x + pos.w + (flowLayout.labelOffset ?? 14);
+                  const isHover = flowHoverNodeId === id;
+                  return (
+                    <g
+                      key={id}
+                      filter="url(#nodeShadow)"
+                      style={{ cursor: 'pointer' }}
+                      onMouseEnter={() => setFlowHoverNodeId(id)}
+                      onMouseLeave={() => setFlowHoverNodeId(null)}
+                    >
+                      <rect x={pos.x} y={pos.y} width={pos.w} height={pos.h} rx={6} fill={fill} fillOpacity={isHover ? 1 : 0.92} stroke={isHover ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.2)'} strokeWidth={isHover ? 1.5 : 1} />
+                      <text x={labelX} y={pos.y + pos.h / 2} fill={isHover ? '#FFF' : '#E2E8F0'} fontSize={11} fontWeight={700} dominantBaseline="middle" style={{ letterSpacing: isLeft || isRight ? '0.04em' : '0' }}>
+                        {pos.name} <tspan fill="#94A3B8" fontWeight={600}> {pos.pct != null ? `${pos.pct.toFixed(1)}%` : ''}</tspan>
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </SafeChartContainer>
+            {flowHoverNodeId && (() => {
+              const pos = flowLayout.positions.get(flowHoverNodeId);
+              if (!pos) return null;
+              const globalPct = flowLayout.totalSales ? (pos.value / flowLayout.totalSales * 100) : 0;
+              return (
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 px-4 py-3 rounded-xl bg-slate-950/95 border border-white/10 shadow-xl backdrop-blur-sm pointer-events-none">
+                  <p className="text-[11px] font-black text-white whitespace-nowrap">{pos.name}</p>
+                  <p className="text-[10px] font-bold text-slate-400 mt-0.5">{t('sales')}: <span className="text-[#A3E635]">{pos.value.toLocaleString()}</span></p>
+                  <p className="text-[9px] font-bold text-slate-500">{pos.pct != null ? `${pos.pct.toFixed(1)}%` : ''} {t('flow_column_pct')} · {globalPct.toFixed(1)}% {t('flow_total_pct')}</p>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
+      {/* 折扣力度：按渠道平均折扣率 */}
+      {discountByChannelData.length > 0 && (
+        <div className="premium-card p-10 lg:p-14 text-left border-white/5 min-w-0 flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-slate-950 rounded-xl flex items-center justify-center text-[#F472B6] shadow-inner"><Percent size={18} /></div>
+              <div>
+                <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('panel_discount')}</h4>
+                <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mt-1">{t('panel_discount_hint')}</p>
+              </div>
+            </div>
+          </div>
+          <SafeChartContainer height={220}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+              <BarChart data={discountByChannelData} margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" />
+                <XAxis dataKey="channel" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 900 }} />
+                <YAxis unit="%" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 900 }} domain={[0, 'auto']} />
+                <Tooltip content={<DiscountTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                <Bar dataKey="avgDiscountPct" radius={[4, 4, 0, 0]} name={t('avg_discount_pct')}>
+                  {discountByChannelData.map((_, i) => (
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} fillOpacity={0.85} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </SafeChartContainer>
+        </div>
+      )}
+
       {/* 产品价格指数定位：同品类同平台，所有产品 X=价格指数(100=均价) Y=销量，五档占位 入门/主流/中端/中高端/高端 */}
       {productPriceIndexData.length > 0 && (
         <div className="premium-card p-10 lg:p-14 text-left border-white/5 min-w-0 flex flex-col overflow-hidden">
@@ -476,36 +876,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                   ))}
                 </Scatter>
               </ScatterChart>
-            </ResponsiveContainer>
-          </SafeChartContainer>
-        </div>
-      )}
-
-      {/* 评分分布 */}
-      {marketData.length > 0 && (
-        <div className="premium-card p-10 lg:p-14 text-left border-white/5 min-w-0 overflow-hidden">
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-slate-950 rounded-xl flex items-center justify-center text-[#A3E635] shadow-inner"><Star size={18} /></div>
-              <div>
-                <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('rating_distribution')}</h4>
-                <p className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mt-1">{t('products_by_rating')}</p>
-              </div>
-            </div>
-          </div>
-          <SafeChartContainer height={180}>
-            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-              <BarChart data={ratingDistributionData} margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.02)" />
-                <XAxis dataKey="range" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 900 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 900 }} allowDecimals={false} />
-                <Tooltip content={<RatingBarTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)', stroke: 'rgba(255,255,255,0.08)', strokeWidth: 1 }} />
-                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                  {ratingDistributionData.map((entry, index) => (
-                    <Cell key={`bar-${index}`} fill={COLORS[index % COLORS.length]} fillOpacity={0.8} />
-                  ))}
-                </Bar>
-              </BarChart>
             </ResponsiveContainer>
           </SafeChartContainer>
         </div>

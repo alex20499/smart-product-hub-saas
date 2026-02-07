@@ -9,7 +9,7 @@ import { ProductInventory } from './components/ProductInventory';
 import { Settings } from './components/Settings';
 import { UserManagement } from './components/UserManagement';
 import { Login } from './components/Login';
-import { AppState, Category, ProductData, User, Language } from './types';
+import { AppState, Category, User, Language } from './types';
 import { DEFAULT_CATEGORIES, STORAGE_KEY, MOCK_PRODUCTS, TRANSLATIONS } from './constants';
 import { ShieldAlert, RefreshCw } from 'lucide-react';
 
@@ -148,6 +148,10 @@ const App: React.FC = () => {
         const createdMs = p.created_at ? new Date(p.created_at).getTime() : 0;
         const updatedMs = p.updated_at ? new Date(p.updated_at).getTime() : undefined;
         // 先展开 attributes，再用 DB 固定列覆盖，确保云端数据优先
+        // 销量/价格：优先用表字段，没有则从 attributes 取，保证仪表盘三块版块能联动
+        const monthlySalesVal = p.monthly_sales ?? (attributes as any)?.monthly_sales ?? (attributes as any)?.monthlySales ?? (attributes as any)?.销量;
+        const priceVal = p.price ?? (attributes as any)?.price ?? (attributes as any)?.价格;
+        const actualPriceVal = p.actual_price ?? (attributes as any)?.actual_price ?? (attributes as any)?.actualPrice ?? (attributes as any)?.到手价;
         return {
           ...attributes,
           id: p.id,
@@ -155,16 +159,16 @@ const App: React.FC = () => {
           createdAt: createdMs,
           updatedAt: updatedMs,
           updatedBy: p.updated_by,
-          brand: p.brand || '',
-          model: p.model || '',
-          price: Number(p.price || 0),
-          monthlySales: Number(p.monthly_sales || 0),
-          rating: Math.round(Math.min(5, Math.max(0, Number(p.rating || 0))) * 100) / 100,
+          brand: p.brand || (attributes as any)?.brand || '',
+          model: p.model || (attributes as any)?.model || '',
+          price: Number(priceVal || 0),
+          monthlySales: Number(monthlySalesVal || 0),
+          rating: Math.round(Math.min(5, Math.max(0, Number(p.rating || (attributes as any)?.rating || 0))) * 100) / 100,
           mainImage: p.main_image || '',
-          linkUrl: p.link_url || '',
-          channel: p.channel || '',
+          linkUrl: p.link_url || (attributes as any)?.link_url || '',
+          channel: p.channel || (attributes as any)?.channel || '',
           shopName: p.shop_name || '',
-          actualPrice: p.actual_price ? Number(p.actual_price) : undefined,
+          actualPrice: actualPriceVal != null && actualPriceVal !== '' ? Number(actualPriceVal) : undefined,
           attributes
         };
       });
@@ -189,7 +193,7 @@ const App: React.FC = () => {
 
   // Supabase Auth 会话恢复 + 获取用户角色（带超时保护）
   const restoreSession = useCallback(async () => {
-    const SESSION_TIMEOUT_MS = 10000; // 10秒超时
+    const SESSION_TIMEOUT_MS = 30000; // 30秒，适配远区（如孟买）高延迟
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error('SESSION_TIMEOUT')), SESSION_TIMEOUT_MS);
     });
@@ -287,7 +291,6 @@ const App: React.FC = () => {
     const uid = state.currentUser?.id ?? null;
     if (uid && uid !== prevUserIdRef.current) {
       prevUserIdRef.current = uid;
-      // 延迟执行，避免阻塞初始渲染
       setTimeout(() => {
         fetchFromCloud().catch((err) => {
           console.warn('初始数据同步失败（不影响页面显示）:', err);
@@ -301,6 +304,7 @@ const App: React.FC = () => {
     setIsSyncing(true);
     console.log('[Product Add] 开始');
     try {
+      const { categoryId, ...restData } = data;
       // 先取 token，整次流程只调一次 getSession，避免上传后再取导致超时
       let token: string;
       try {
@@ -312,8 +316,6 @@ const App: React.FC = () => {
         }
         throw e;
       }
-
-      const { categoryId, ...restData } = data;
       let mainImage = restData.mainImage || '';
       if (mainImage.startsWith('data:image/')) {
         try {
@@ -333,7 +335,7 @@ const App: React.FC = () => {
           const { uploadImageToStorage } = await import('./utils/uploadImage');
           const UPLOAD_TIMEOUT_MS = 30000;
           mainImage = await Promise.race([
-            uploadImageToStorage(mainImage, { token }),
+            uploadImageToStorage(mainImage),
             new Promise<never>((_, rej) => setTimeout(() => rej(new Error(t('save_timeout'))), UPLOAD_TIMEOUT_MS)),
           ]);
         } catch (e) {
@@ -419,12 +421,10 @@ const App: React.FC = () => {
         setDiagnostic({ msg: error.message, code: error.code });
         throw new Error(error.message);
       }
-      // 同步列表在后台执行，避免长时间等待导致“请求超时”
       console.log('[Product Add] 成功');
       setToast({ message: t('toast_saved'), type: 'success' });
-      fetchFromCloud(true).catch((err) => {
-        console.warn('后台同步失败（不影响当前操作）:', err);
-      });
+      // 立即拉取最新列表，让产品管理页看到新加的产品
+      await fetchFromCloud(false);
     } catch (err: any) {
       console.error('[Product Add] 异常:', err?.name, err?.message);
       const msg = err?.name === 'AbortError' ? t('save_timeout') : (err?.message || t('add_product_failed'));
@@ -442,9 +442,6 @@ const App: React.FC = () => {
     try {
       const { categoryId, ...restData } = data;
       let mainImage = restData.mainImage || '';
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:handleProductUpdate',message:'Update mainImage payload',data:{id,restMainImage:restData.mainImage,mainImageValue:mainImage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
       // 只处理 base64 图片上传，不支持外部 URL（避免 token 超时问题）
       if (mainImage && mainImage.trim() && mainImage.startsWith('data:image/')) {
         // base64 图片：上传到 Storage
@@ -491,9 +488,6 @@ const App: React.FC = () => {
         updated_at: now,
         updated_by: (state.currentUser?.id && /^[0-9a-f-]{36}$/i.test(state.currentUser.id)) ? state.currentUser.id : null
       };
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:fixedFields',message:'Fixed fields main_image',data:{id,fixedMainImage:fixedFields.main_image},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
       const dynamicFields = { ...restData };
       delete dynamicFields.brand;
       delete dynamicFields.model;
@@ -547,19 +541,21 @@ const App: React.FC = () => {
               token = parsed?.access_token || parsed?.currentSession?.access_token || parsed?.session?.access_token || '';
             } catch {}
           }
-          // 方法3：如果 localStorage 也没有，最后尝试 getSession（8秒超时）
+          // 方法3：如果 localStorage 也没有，最后尝试 getSession（25 秒超时）
           if (!token) {
-            const sessionController = new AbortController();
-            const sessionTimeoutId = setTimeout(() => sessionController.abort(), 8000);
+            let sessionTimeoutId: ReturnType<typeof setTimeout> | null = null;
             try {
-              const { data: { session }, error: sessionError } = await Promise.race([
+              const result = await Promise.race([
                 supabase.auth.getSession(),
-                new Promise<never>((_, reject) => setTimeout(() => reject(new Error('SESSION_TIMEOUT')), 8000))
+                new Promise<never>((_, reject) => {
+                  sessionTimeoutId = setTimeout(() => reject(new Error('SESSION_TIMEOUT')), 25000);
+                })
               ]) as any;
+              const { data: { session }, error: sessionError } = result;
               if (sessionError) throw new Error('获取登录状态失败');
               token = session?.access_token || '';
             } finally {
-              clearTimeout(sessionTimeoutId);
+              if (sessionTimeoutId) clearTimeout(sessionTimeoutId);
             }
           }
           if (!token) {
@@ -609,10 +605,10 @@ const App: React.FC = () => {
           throw new Error(msg);
         }
       }
-      // 错峰拉列表：延迟 2.5 秒再同步，且仅当没有新的保存在进行时才拉，避免第二次保存与拉列表抢 Supabase 连接导致卡住
+      // 约 1 秒后拉取最新列表，让产品管理页看到修改，且错峰避免与下次保存抢连接
       setTimeout(() => {
-        if (!saveInProgressRef.current) fetchFromCloud(true).catch(() => {});
-      }, 2500);
+        if (!saveInProgressRef.current) fetchFromCloud(false);
+      }, 1000);
     } catch (err: any) {
       console.error('Product update error:', err);
       setDiagnostic({ msg: err?.message || t('update_product_failed'), code: 'UPDATE_ERROR' });
@@ -631,7 +627,7 @@ const App: React.FC = () => {
         setDiagnostic({ msg: error.message, code: error.code });
         throw new Error(error.message);
       }
-      await fetchFromCloud(true);
+      await fetchFromCloud(false);
       setToast({ message: t('toast_deleted'), type: 'success' });
     } finally {
       setIsSyncing(false);
@@ -726,7 +722,7 @@ const App: React.FC = () => {
       const token = session?.access_token;
       if (!token) {
         setDiagnostic({ msg: t('auth_expired'), code: 'AUTH_EXPIRED' });
-        return;
+        throw new Error(t('auth_expired'));
       }
       const email = user.email || (user.username?.includes('@') ? user.username : null);
       const res = await fetch('/api/create-user', {
@@ -741,12 +737,14 @@ const App: React.FC = () => {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setDiagnostic({ msg: data?.error?.message || `创建失败: ${res.status}`, code: data?.code });
-        return;
+        const msg = data?.error?.message || `创建失败: ${res.status}`;
+        setDiagnostic({ msg, code: data?.code });
+        throw new Error(msg);
       }
       await fetchFromCloud(true);
     } catch (err: any) {
       setDiagnostic({ msg: err?.message || t('create_user_failed'), code: 'CREATE_USER_ERR' });
+      throw err instanceof Error ? err : new Error(err?.message || t('create_user_failed'));
     } finally {
       setIsSyncing(false);
     }
@@ -754,13 +752,20 @@ const App: React.FC = () => {
 
   const handleUserUpdate = async (user: User) => {
     setIsSyncing(true);
-    // users 表无 avatar 列，只更新 DB 存在的字段；密码为空则不更新密码
-    const payload: Record<string, unknown> = { username: user.username, role: user.role };
-    if (user.password && user.password.trim()) payload.password = user.password.trim();
-    if (user.email !== undefined) payload.email = user.email || null;
-    const { error } = await supabase.from('users').update(payload).eq('id', user.id);
-    if (error) setDiagnostic({ msg: error.message, code: error.code });
-    await fetchFromCloud(true);
+    try {
+      // users 表无 avatar 列，只更新 DB 存在的字段；密码为空则不更新密码
+      const payload: Record<string, unknown> = { username: user.username, role: user.role };
+      if (user.password && user.password.trim()) payload.password = user.password.trim();
+      if (user.email !== undefined) payload.email = user.email || null;
+      const { error } = await supabase.from('users').update(payload).eq('id', user.id);
+      if (error) {
+        setDiagnostic({ msg: error.message, code: error.code });
+        throw new Error(error.message);
+      }
+      await fetchFromCloud(true);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   const handleUserDelete = async (id: string) => {

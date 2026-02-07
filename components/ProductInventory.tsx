@@ -164,7 +164,13 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
 
   const filteredProducts = useMemo(() => {
     let result = Array.isArray(products) ? [...products] : [];
-    result.sort((a, b) => (b?.createdAt || 0) - (a?.createdAt || 0));
+    // 固定排序：先按创建时间倒序（新在前），再按 id 稳定顺序，避免编辑后列表乱跳
+    result.sort((a, b) => {
+      const ta = b?.createdAt ?? 0;
+      const tb = a?.createdAt ?? 0;
+      if (ta !== tb) return ta - tb;
+      return String(a?.id ?? '').localeCompare(String(b?.id ?? ''));
+    });
 
     if (selectedCategory !== 'all') result = result.filter(p => p?.categoryId === selectedCategory);
     if (selectedChannel !== 'all') result = result.filter(p => p?.channel === selectedChannel);
@@ -309,9 +315,6 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       return;
     }
     const finalData = { ...formData, categoryId: activeCategory.id };
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ProductInventory.tsx:handleSubmit',message:'Add/Edit payload',data:{editingId,linkUrl:finalData.linkUrl,mainImage:finalData.mainImage,hasLink:!!finalData.linkUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H3'})}).catch(()=>{});
-    // #endregion
     setIsSaving(true);
     setPasteParseError(null);
     try {
@@ -464,9 +467,6 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                 {(() => {
                   const att = (selectedProduct?.attributes as any);
                   const linkUrl = selectedProduct?.linkUrl || att?.linkUrl || att?.link_url || '';
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ProductInventory.tsx:detail-link-bar',message:'Detail link resolution',data:{productId:selectedProduct?.id,rootLinkUrl:selectedProduct?.linkUrl,attLinkUrl:att?.link_url,resolved:linkUrl,hasBar:!!linkUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-                  // #endregion
                   return linkUrl ? (
                     <div className="flex items-center justify-between p-4 bg-[#A3E635]/10 border border-[#A3E635]/30 rounded-2xl">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('product_link')}</span>
@@ -721,11 +721,6 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                     {paginatedProducts.map((p, idx) => {
                       const att = (p as any)?.attributes;
                       const linkUrl = p?.linkUrl || att?.linkUrl || att?.link_url || '';
-                      // #region agent log
-                      if (idx === 0 && paginatedProducts.length > 0) {
-                        fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ProductInventory.tsx:list-row',message:'List link resolution',data:{productId:p?.id,rootLinkUrl:p?.linkUrl,attLinkUrl:att?.link_url,resolved:linkUrl,hasLink:!!linkUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H1'})}).catch(()=>{});
-                      }
-                      // #endregion
                       return (
                       <tr key={p.id} className="hover:bg-white/5 transition-colors group cursor-pointer" onClick={() => handleProductClick(p)}>
                          <td className="px-6 py-4">
@@ -1167,9 +1162,6 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                        {(() => {
                          const att = (detailedProduct as any)?.attributes;
                          const linkUrl = detailedProduct?.linkUrl || att?.linkUrl || att?.link_url || '';
-                         // #region agent log
-                         fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ProductInventory.tsx:viewDetailId-overlay',message:'Overlay link resolution',data:{productId:detailedProduct?.id,rootLinkUrl:detailedProduct?.linkUrl,attLinkUrl:att?.link_url,resolved:linkUrl,hasButton:!!linkUrl},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H5'})}).catch(()=>{});
-                         // #endregion
                          return linkUrl ? (
                            <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center gap-3 px-6 py-4 bg-[#A3E635] text-slate-950 font-black text-[10px] sm:text-[11px] uppercase rounded-2xl hover:opacity-90 transition-opacity">
                              <ExternalLink size={20} /> {t('open_official')}

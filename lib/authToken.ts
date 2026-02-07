@@ -5,7 +5,7 @@
 import { supabase } from './supabase';
 
 const CACHE_TTL_MS = 60_000; // 60 秒内复用，覆盖整次「上传+保存」流程
-const DEFAULT_TIMEOUT_MS = 20_000; // 单次 getSession 超时 20 秒
+const DEFAULT_TIMEOUT_MS = 30_000; // 单次 getSession 超时 30 秒（适配远区如孟买）
 const MAX_ATTEMPTS = 3; // 最多尝试 3 次
 
 const SESSION_TIMEOUT_MSG = '获取登录状态超时，请检查网络或刷新重试';

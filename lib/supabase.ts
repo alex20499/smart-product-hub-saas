@@ -9,7 +9,8 @@ if (typeof window !== 'undefined' && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
   );
 }
 
-const FETCH_TIMEOUT_MS = 15000;
+// 孟买等远区节点延迟较高，统一拉长以降低误报超时
+const FETCH_TIMEOUT_MS = 35000;
 const fetchWithTimeout: typeof fetch = (input, init) => {
   const c = new AbortController();
   const t = setTimeout(() => c.abort(), FETCH_TIMEOUT_MS);

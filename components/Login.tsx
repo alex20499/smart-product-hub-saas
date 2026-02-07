@@ -66,7 +66,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
     const finalPass = cleanInput(passRef.current?.value || password);
     const finalEmail = raw.includes('@') ? raw : `${raw}@internal.local`;
 
-    const AUTH_TIMEOUT_MS = 15000;
+    const AUTH_TIMEOUT_MS = 35000; // 适配远区（如孟买）高延迟
     const loginPromise = onLogin(finalEmail, finalPass);
     let timeoutId: NodeJS.Timeout | null = null;
     const timeoutPromise = new Promise<never>((_, reject) => {

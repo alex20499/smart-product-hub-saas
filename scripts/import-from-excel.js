@@ -77,6 +77,7 @@ const COL_TO_ATTR = {
   '容量(mAh)': 'capacity_mah',
   '能量(Wh)': 'energy_wh',
   '最大输出(V/A/W)': 'max_output',
+  '最大输出(W)': 'max_output',
   输入端口: 'input_ports',
   输出端口: 'output_ports',
   '自带线(有/无)': 'built_in_cable',

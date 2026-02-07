@@ -48,7 +48,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
     if (!canEdit || !selectedCategory || !newFieldName.trim()) return;
     const isOptionType = newFieldType === FieldType.SELECT || newFieldType === FieldType.MULTI_SELECT_QUANTITY;
     const newField: ProductField = { 
-      id: 'f_' + Math.random().toString(36).substr(2, 9), 
+      id: 'f_' + crypto.randomUUID().slice(0, 8), 
       name: newFieldName.trim(), 
       type: newFieldType, 
       required: false, 

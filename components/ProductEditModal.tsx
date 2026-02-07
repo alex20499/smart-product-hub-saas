@@ -53,13 +53,14 @@ const MultiQuantityInput: React.FC<{ options: string[]; value: Record<string, nu
 };
 
 const StarRatingInput: React.FC<{ value: string | number; onChange: (val: number) => void }> = ({ value, onChange }) => {
-  const num = typeof value === 'string' ? parseFloat(value) : (value || 0);
+  const raw = typeof value === 'string' ? parseFloat(value) : Number(value);
+  const num = Math.min(5, Math.max(0, Number.isFinite(raw) ? raw : 0));
   return (
     <div className="flex gap-1">
       {[1, 2, 3, 4, 5].map(r => (
         <button key={r} type="button" onClick={() => onChange(r)} className={`text-2xl ${r <= num ? 'text-yellow-400' : 'text-slate-700'}`}>★</button>
       ))}
-      <input type="number" step="0.1" min="0" max="5" className="ml-4 w-20 bg-slate-900 border border-white/5 rounded px-2 py-1 text-white text-sm" value={num} onChange={e => onChange(parseFloat(e.target.value) || 0)} />
+      <input type="number" step="0.1" min="0" max="5" className="ml-4 w-20 bg-slate-900 border border-white/5 rounded px-2 py-1 text-white text-sm" value={num} onChange={e => onChange(Math.min(5, Math.max(0, parseFloat(e.target.value) || 0)))} />
     </div>
   );
 };
@@ -146,9 +147,6 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({ product, cat
         insight_summary: (formData.insight_summary ?? formData.insightSummary)?.trim?.() || '',
         search_keywords: (formData.search_keywords ?? '')?.trim?.() || ''
       };
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/6d2b633e-6dc1-4675-bc16-02633831aa0a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ProductEditModal.tsx:handleSave',message:'Edit updateData mainImage',data:{productId:product?.id,sentMainImage:updateData.mainImage},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion
       
       // 保留品类动态字段（排除固定字段和重复字段）
       const EDIT_FIXED_IDS = ['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','selling_points','pros','cons','proPoints','conPoints','rawReview','raw_review','insightSummary','insight_summary','search_keywords','categoryId'];

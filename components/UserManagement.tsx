@@ -5,8 +5,8 @@ import { User, UserRole } from '../types';
 
 interface UserManagementProps {
   users: User[];
-  onAddUser: (user: User) => void;
-  onUpdateUser: (user: User) => void;
+  onAddUser: (user: User) => void | Promise<void>;
+  onUpdateUser: (user: User) => void | Promise<void>;
   onDeleteUser: (id: string) => void;
   currentUser: User;
   t: (key: string) => string;
@@ -24,7 +24,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
 
   const isAdmin = currentUser.role === 'admin';
 
-  const addUser = (e: React.FormEvent) => {
+  const addUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
@@ -46,10 +46,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
     };
     if (trimmedUsername.includes('@')) newUser.email = trimmedUsername;
 
-    onAddUser(newUser);
-    setIsAddFormOpen(false);
-    setNewUsername('');
-    setNewPassword('');
+    try {
+      await Promise.resolve(onAddUser(newUser));
+      setIsAddFormOpen(false);
+      setNewUsername('');
+      setNewPassword('');
+    } catch (err: any) {
+      setFormError(err?.message || t('create_user_failed'));
+    }
   };
 
   const openEditForm = (user: User) => {
@@ -67,7 +71,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
     setEditingUserId(null);
   };
 
-  const updateExistingUser = (e: React.FormEvent) => {
+  const updateExistingUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUserId) return;
 
@@ -86,8 +90,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
       avatar: `https://picsum.photos/seed/${trimmedUsername}/100/100`
     };
     if (trimmedUsername.includes('@')) update.email = trimmedUsername;
-    onUpdateUser(update);
-    closeEditForm();
+    try {
+      await Promise.resolve(onUpdateUser(update));
+      closeEditForm();
+    } catch (err: any) {
+      setFormError(err?.message || t('update_user_failed'));
+    }
   };
 
   return (
