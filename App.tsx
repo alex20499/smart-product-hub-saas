@@ -193,10 +193,34 @@ const App: React.FC = () => {
 
   // Supabase Auth 会话恢复 + 获取用户角色（带超时保护）
   const restoreSession = useCallback(async () => {
-    const SESSION_TIMEOUT_MS = 30000; // 30秒，适配远区（如孟买）高延迟
+    const SESSION_TIMEOUT_MS = 55000; // 55秒，与登录超时一致，适配远区（如孟买）高延迟
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => reject(new Error('SESSION_TIMEOUT')), SESSION_TIMEOUT_MS);
     });
+
+    const setUserFromSession = async (session: { user: { id: string } }) => {
+      const { data: profile, error: profileError } = await supabase
+        .from('users')
+        .select('id, username, email, role')
+        .eq('auth_user_id', session.user.id)
+        .single();
+      if (profileError) {
+        console.warn('获取用户信息失败:', profileError);
+        setState((prev) => ({ ...prev, currentUser: null }));
+      } else if (profile) {
+        setState((prev) => ({
+          ...prev,
+          currentUser: {
+            id: profile.id,
+            username: profile.username || profile.email || '',
+            email: profile.email,
+            role: profile.role
+          }
+        }));
+      } else {
+        setState((prev) => ({ ...prev, currentUser: null }));
+      }
+    };
     
     try {
       const sessionResult = await Promise.race([
@@ -216,32 +240,20 @@ const App: React.FC = () => {
         return;
       }
       
-      // 获取用户信息也加超时保护
-      const profileResult = await Promise.race([
-        supabase.from('users').select('id, username, email, role').eq('auth_user_id', session.user.id).single(),
-        timeoutPromise
-      ]) as any;
-      
-      const { data: profile, error: profileError } = profileResult || {};
-      if (profileError) {
-        console.warn('获取用户信息失败:', profileError);
-        setState((prev) => ({ ...prev, currentUser: null }));
-      } else if (profile) {
-        setState((prev) => ({
-          ...prev,
-          currentUser: {
-            id: profile.id,
-            username: profile.username || profile.email || '',
-            email: profile.email,
-            role: profile.role
-          }
-        }));
-      } else {
-        setState((prev) => ({ ...prev, currentUser: null }));
-      }
+      await setUserFromSession(session);
     } catch (err: any) {
+      // 超时后仍检查一次 session：可能请求在超时后刚返回，session 已写入
+      if (err?.message === 'SESSION_TIMEOUT') {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            await setUserFromSession(session);
+            setAuthChecked(true);
+            return;
+          }
+        } catch (_) {}
+      }
       console.error('恢复会话异常:', err);
-      // 超时或其他错误时，仍然设置 authChecked 为 true，避免一直 loading
       setState((prev) => ({ ...prev, currentUser: null }));
     } finally {
       setAuthChecked(true);
