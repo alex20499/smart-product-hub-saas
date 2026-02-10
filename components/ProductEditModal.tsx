@@ -436,7 +436,7 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({ product, cat
                         <ImageInput value={fieldVal} onChange={v => setFormData({...formData, [f.id]: v})} t={t} />
                       )}
                       {f.type === FieldType.SELECT && (
-                        <select className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40" value={fieldVal} onChange={e => setFormData({...formData, [f.id]: e.target.value})}>
+                        <select className="select-theme-dark w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40" value={fieldVal} onChange={e => setFormData({...formData, [f.id]: e.target.value})}>
                           <option value="">{t('all')}</option>
                           {opts.map(o => <option key={o} value={o}>{o}</option>)}
                         </select>

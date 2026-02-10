@@ -2,6 +2,20 @@
    全局UI布局安全距离和样式修复
    ======================================== */
 
+/* 下拉框：Windows Chrome 等环境下保持深色主题，避免系统默认白底/白列表 */
+#root select,
+.select-theme-dark {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: #0f172a !important;
+  color: #e2e8f0 !important;
+}
+#root select option,
+.select-theme-dark option {
+  background-color: #0f172a !important;
+  color: #e2e8f0 !important;
+}
+
 /* 字体层级规范 - 详见 docs/TYPOGRAPHY.md */
 .type-page-title { font-size: 1.25rem; font-weight: 700; color: white; letter-spacing: 0.02em; }
 @media (min-width: 640px) { .type-page-title { font-size: 1.5rem; } }

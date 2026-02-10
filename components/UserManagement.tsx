@@ -165,7 +165,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users = [], onAd
                 <select
                   value={newRole}
                   onChange={e => setNewRole(e.target.value as UserRole)}
-                  className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-[11px] font-black uppercase text-white outline-none tracking-widest focus:border-[#38BDF8]/50 appearance-none"
+                  className="select-theme-dark w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3 text-[11px] font-black uppercase text-white outline-none tracking-widest focus:border-[#38BDF8]/50 appearance-none"
                 >
                   <option value="viewer" className="bg-slate-900">{t('role_viewer')}</option>
                   <option value="editor" className="bg-slate-900">{t('role_editor')}</option>

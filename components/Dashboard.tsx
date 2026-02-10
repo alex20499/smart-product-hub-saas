@@ -3,13 +3,14 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Zap, TrendingUp, PieChart as PieIcon, 
   ShoppingCart, Award, DollarSign, Globe, Layers,
-  ChevronDown, RefreshCw, MessageSquare, 
+  RefreshCw, MessageSquare, 
   Target, Activity, SlidersHorizontal, Table as TableIcon,
   Tag, Percent, Info, ExternalLink, ArrowRight, Star,
   Search, Eye, ChevronRight, LayoutGrid, Package, Layout,
   ArrowLeft, Calendar, ShieldCheck, Database, Lock, Trophy,
   ThumbsUp, ThumbsDown, AlertTriangle, Brain, GitBranch
 } from 'lucide-react';
+import { Select } from './Select';
 import { ProductData, ProductField, Category, FieldType } from '../types';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, 
@@ -526,43 +527,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
         </div>
 
         <div className="flex flex-wrap items-center gap-3 lg:gap-4 no-print">
-          <div className="relative group">
-            <Layout size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-hover:text-[#A3E635] transition-colors" />
-            <select 
+          <div className="min-w-[140px] lg:min-w-[160px]">
+            <Select
+              options={[{ value: 'all', label: t('category') }, ...categories.filter(c => c?.id && c?.name).map(c => ({ value: c.id!, label: c.name! }))]}
               value={selectedCategory}
-              onChange={(e) => { setSelectedCategory(e.target.value); setVisibleProducts(5); }}
-              className="bg-slate-900 border border-white/5 rounded-2xl pl-12 pr-10 py-3 lg:py-4 text-[10px] lg:text-[11px] font-black uppercase text-white tracking-widest outline-none focus:border-[#A3E635]/40 appearance-none min-w-[140px] lg:min-w-[160px] cursor-pointer"
-            >
-              <option value="all">{t('category')}</option>
-              {categories.map(c => c?.id && c?.name ? <option key={c.id} value={c.id}>{c.name}</option> : null)}
-            </select>
-            <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+              onChange={(v) => { setSelectedCategory(v); setVisibleProducts(5); }}
+              leftIcon={<Layout size={14} className="text-slate-500" />}
+              className="bg-slate-900 border-white/5 rounded-2xl pl-12 pr-10 py-3 lg:py-4 text-[10px] lg:text-[11px] tracking-widest focus:border-[#A3E635]/40"
+            />
           </div>
-
-          <div className="relative group">
-            <Globe size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-hover:text-[#A3E635] transition-colors" />
-            <select 
+          <div className="min-w-[140px] lg:min-w-[160px]">
+            <Select
+              options={[{ value: 'all', label: t('global_channels') }, ...channels.filter(Boolean).map(ch => ({ value: ch!, label: ch! }))]}
               value={selectedChannel}
-              onChange={(e) => { setSelectedChannel(e.target.value); setVisibleProducts(5); }}
-              className="bg-slate-900 border border-white/5 rounded-2xl pl-12 pr-10 py-3 lg:py-4 text-[10px] lg:text-[11px] font-black uppercase text-white tracking-widest outline-none focus:border-[#A3E635]/40 appearance-none min-w-[140px] lg:min-w-[160px] cursor-pointer"
-            >
-              <option value="all">{t('global_channels')}</option>
-              {channels.map(ch => ch ? <option key={ch} value={ch}>{ch}</option> : null)}
-            </select>
-            <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+              onChange={(v) => { setSelectedChannel(v); setVisibleProducts(5); }}
+              leftIcon={<Globe size={14} className="text-slate-500" />}
+              className="bg-slate-900 border-white/5 rounded-2xl pl-12 pr-10 py-3 lg:py-4 text-[10px] lg:text-[11px] tracking-widest focus:border-[#A3E635]/40"
+            />
           </div>
-
-          <div className="relative group">
-            <Tag size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 group-hover:text-[#818CF8] transition-colors" />
-            <select 
+          <div className="min-w-[160px]">
+            <Select
+              options={[{ value: 'all', label: t('all_brands') }, ...brands.filter(Boolean).map(b => ({ value: b!, label: b! }))]}
               value={selectedBrand}
-              onChange={(e) => setSelectedBrand(e.target.value)}
-              className="bg-slate-900 border border-white/5 rounded-2xl pl-12 pr-10 py-4 text-[10px] font-black uppercase text-white tracking-widest outline-none focus:border-[#818CF8]/40 appearance-none min-w-[160px] cursor-pointer"
-            >
-              <option value="all">{t('all_brands')}</option>
-              {brands.map(b => b ? <option key={b} value={b}>{b}</option> : null)}
-            </select>
-            <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+              onChange={setSelectedBrand}
+              leftIcon={<Tag size={14} className="text-slate-500" />}
+              className="bg-slate-900 border-white/5 rounded-2xl pl-12 pr-10 py-4 text-[10px] tracking-widest focus:border-[#818CF8]/40"
+            />
           </div>
         </div>
       </div>

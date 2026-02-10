@@ -14,6 +14,7 @@ import { DEFAULT_CHANNEL_OPTIONS } from '../constants';
 import { getAuthToken } from '../lib/authToken';
 import { ImageInput } from './ImageInput';
 import { ProductEditModal } from './ProductEditModal';
+import { Select } from './Select';
 
 interface ProductInventoryProps {
   products: ProductData[];
@@ -349,7 +350,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
       case FieldType.SELECT: 
         return (
           <div className="relative">
-            <select className={`${baseInput} appearance-none pr-10`} value={fieldValue} onChange={e => setFormData({...formData, [field.id]: e.target.value})}>
+            <select className={`select-theme-dark ${baseInput} appearance-none pr-10`} value={fieldValue} onChange={e => setFormData({...formData, [field.id]: e.target.value})}>
               <option value="">{t('all')}</option>
               {fieldOptions.map(opt => <option key={opt} value={opt} className="bg-slate-900">{opt}</option>)}
             </select>
@@ -402,21 +403,21 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
             className="w-full bg-slate-900/50 border border-white/5 rounded-xl pl-12 pr-4 py-3.5 text-[10px] font-black uppercase text-white outline-none focus:border-white/20 transition-all" 
           />
         </div>
-        <div className="md:col-span-3 relative">
-          <Layout size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-          <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)} className="w-full bg-slate-900/50 border border-white/5 rounded-xl pl-11 pr-4 py-3.5 text-[10px] font-black uppercase text-white outline-none appearance-none cursor-pointer">
-            <option value="all">{t('all')} {t('category')}</option>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+        <div className="md:col-span-3">
+          <Select
+            options={[{ value: 'all', label: `${t('all')} ${t('category')}` }, ...categories.map(c => ({ value: c.id, label: c.name }))]}
+            value={selectedCategory}
+            onChange={setSelectedCategory}
+            leftIcon={<Layout size={14} className="text-slate-500" />}
+          />
         </div>
-        <div className="md:col-span-3 relative">
-          <Globe size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" />
-          <select value={selectedChannel} onChange={(e) => setSelectedChannel(e.target.value)} className="w-full bg-slate-900/50 border border-white/5 rounded-xl pl-11 pr-4 py-3.5 text-[10px] font-black uppercase text-white outline-none appearance-none cursor-pointer">
-            <option value="all">{t('all')} {t('channel')}</option>
-            {channels.map(ch => <option key={ch} value={ch}>{ch}</option>)}
-          </select>
-          <ChevronDown size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
+        <div className="md:col-span-3">
+          <Select
+            options={[{ value: 'all', label: `${t('all')} ${t('channel')}` }, ...channels.map(ch => ({ value: ch, label: ch }))]}
+            value={selectedChannel}
+            onChange={setSelectedChannel}
+            leftIcon={<Globe size={14} className="text-slate-500" />}
+          />
         </div>
       </div>
 
@@ -917,7 +918,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                                <select 
                                  value={formData.channel || ''}
                                  onChange={e => setFormData({...formData, channel: e.target.value})}
-                                 className="w-full bg-slate-900 border border-white/5 rounded-xl pl-12 pr-10 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner appearance-none cursor-pointer"
+                                 className="select-theme-dark w-full bg-slate-900 border border-white/5 rounded-xl pl-12 pr-10 py-3.5 text-[10px] font-black uppercase tracking-widest text-white outline-none focus:border-[#A3E635]/40 transition-all shadow-inner appearance-none cursor-pointer"
                                  required
                                >
                                   <option value="">{t('select_channel')}</option>
@@ -1249,7 +1250,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
             <select 
               value={itemsPerPage} 
               onChange={(e) => setItemsPerPage(Number(e.target.value))}
-              className="bg-slate-900 border border-white/5 rounded-lg px-3 py-2 text-[10px] font-black uppercase text-white outline-none"
+              className="select-theme-dark bg-slate-900 border border-white/5 rounded-lg px-3 py-2 text-[10px] font-black uppercase text-white outline-none"
             >
               <option value={10}>10 {t('per_page')}</option>
               <option value={20}>20 {t('per_page')}</option>

@@ -271,7 +271,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                               <div className="space-y-1 relative">
                                 <label className="text-[8px] font-black text-slate-600 uppercase ml-1">{t('field_type')}</label>
                                 <div className="relative">
-                                  <select value={editFieldType} onChange={e => setEditFieldType(e.target.value as FieldType)} className="w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-[10px] font-black uppercase text-white outline-none appearance-none pr-10">
+                                  <select value={editFieldType} onChange={e => setEditFieldType(e.target.value as FieldType)} className="select-theme-dark w-full bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-[10px] font-black uppercase text-white outline-none appearance-none pr-10">
                                     {Object.values(FieldType).map(f => <option key={f} value={f} className="bg-slate-900">{t(`field_types.${f}`)}</option>)}
                                   </select>
                                   <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
@@ -327,7 +327,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                        <div className="space-y-2 relative">
                          <label className="text-[9px] font-black text-slate-600 uppercase ml-1 tracking-widest">{t('field_type')}</label>
                          <div className="relative">
-                           <select className="w-full h-[58px] bg-slate-900 border border-white/5 rounded-2xl px-6 text-xs font-black uppercase text-white outline-none appearance-none pr-12" value={newFieldType} onChange={e => setNewFieldType(e.target.value as FieldType)}>
+                           <select className="select-theme-dark w-full h-[58px] bg-slate-900 border border-white/5 rounded-2xl px-6 text-xs font-black uppercase text-white outline-none appearance-none pr-12" value={newFieldType} onChange={e => setNewFieldType(e.target.value as FieldType)}>
                              {Object.values(FieldType).map(f => <option key={f} value={f} className="bg-slate-900">{t(`field_types.${f}`)}</option>)}
                            </select>
                            <ChevronDown size={18} className="absolute right-6 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none" />
