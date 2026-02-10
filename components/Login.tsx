@@ -66,11 +66,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
     const finalPass = cleanInput(passRef.current?.value || password);
     const finalEmail = raw.includes('@') ? raw : `${raw}@internal.local`;
 
-    const AUTH_TIMEOUT_MS = 35000; // 适配远区（如孟买）高延迟
+    const AUTH_TIMEOUT_MS = 55000; // 适配远区（如孟买）高延迟，拉长以减少误报超时
     const loginPromise = onLogin(finalEmail, finalPass);
     let timeoutId: NodeJS.Timeout | null = null;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error(t('auth_timeout'))), AUTH_TIMEOUT_MS);
+      timeoutId = setTimeout(() => reject(new Error('AUTH_TIMEOUT')), AUTH_TIMEOUT_MS);
     });
 
     try {
@@ -81,7 +81,19 @@ export const Login: React.FC<LoginProps> = ({ onLogin, t }) => {
         setError(typeof result === 'string' ? result : t('login_failed'));
       }
     } catch (err: any) {
-      setError(err?.message || t('connection_failed'));
+      // 超时后仍检查 session：若服务端已登录成功（session 已写入），则刷新页面进入首页
+      if (err?.message === 'AUTH_TIMEOUT') {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            window.location.reload();
+            return;
+          }
+        } catch (_) {}
+        setError(t('auth_timeout'));
+      } else {
+        setError(err?.message || t('connection_failed'));
+      }
     } finally {
       if (timeoutId) {
         clearTimeout(timeoutId);
