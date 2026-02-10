@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Select } from './Select';
 import { ProductData, ProductField, Category, FieldType } from '../types';
+import { DetailBlocks } from './DetailBlocks';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, 
   PieChart, Pie, LineChart, Line, CartesianGrid, ScatterChart, Scatter, ZAxis,
@@ -740,9 +741,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
               <span className="text-[18px] font-black text-[#A3E635] tabular-nums">{(flowLayout.totalSales ?? 0).toLocaleString()}</span>
             </div>
           </div>
-          <div className="w-full overflow-x-auto overflow-y-hidden rounded-2xl bg-slate-900/30 border border-white/5 relative pt-4 pb-5 px-5">
-            <SafeChartContainer height={340}>
-              <svg viewBox={`0 0 ${flowLayout.W} ${flowLayout.H}`} className="w-full h-full min-h-[300px] block" preserveAspectRatio="xMidYMid meet" style={{ minWidth: 1120 }}>
+          <div className="w-full min-w-0 overflow-x-auto overflow-y-hidden rounded-2xl bg-slate-900/30 border border-white/5 relative pt-4 pb-5 px-5 custom-scrollbar">
+            <div style={{ minWidth: flowLayout.W }} className="inline-block">
+              <SafeChartContainer height={340}>
+                <svg viewBox={`0 0 ${flowLayout.W} ${flowLayout.H}`} width={flowLayout.W} height={flowLayout.H} className="block" preserveAspectRatio="xMidYMid meet">
                 <defs>
                   {flowLayout.ribbons?.map((r, i) => (
                     <linearGradient key={i} id={`ribbonGrad${i}`} x1="0%" y1="0%" x2="100%" y2="0%">
@@ -798,7 +800,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                 </div>
               );
             })()}
+            </div>
           </div>
+          <p className="mt-2 text-[9px] font-bold text-slate-500 uppercase tracking-wider">{t('panel_flow_sankey_scroll_hint')}</p>
         </div>
       )}
 
@@ -1016,156 +1020,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ products = [], categories 
                              </div>
                           </div>
                           )}
-                          {((detailedProduct?.linkUrl || detailedProduct?.attributes?.link_url) && (
-                          <div className="col-span-2">
-                             <p className="text-[8px] sm:text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 sm:mb-2">{t('visit_link')}</p>
-                             <a href={String(detailedProduct?.linkUrl || detailedProduct?.attributes?.link_url)} target="_blank" rel="noopener noreferrer" className="flex items-center justify-between gap-4 px-4 py-3 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl hover:bg-indigo-500 hover:text-white transition-all text-[10px] font-black uppercase tracking-widest truncate">
-                                <span className="truncate flex-1">{(detailedProduct?.linkUrl || detailedProduct?.attributes?.link_url) as string}</span>
-                                <ExternalLink size={14} className="shrink-0" />
-                             </a>
-                          </div>
-                          ))}
-                       </div>
-                       {/* 品类自定义字段 - 按后台配置展示，使用用户创建字段名称 */}
-                       <div className="space-y-4 sm:space-y-6">
-                          <div className="flex items-center gap-2 border-b border-white/5 pb-3">
-                             <Database size={16} className="text-slate-500" />
-                             <p className="text-[10px] font-black text-white uppercase tracking-widest">{t('full_node_data')}</p>
-                          </div>
-                          {(() => {
-                             const FIXED_IDS = ['brand', 'model', 'linkUrl', 'channel', 'shopName', 'price', 'monthlySales', 'rating', 'mainImage', 'link_url', 'main_image'];
-                             const customFields = (detailedCategory?.fields ?? []).filter((f: ProductField) => f?.id && f?.name && !FIXED_IDS.includes(f.id));
-                             const getVal = (f: ProductField) => detailedProduct?.[f.id] ?? detailedProduct?.attributes?.[f.id];
-                             const formatVal = (v: unknown, isMultiQty?: boolean) => {
-                               if (v === undefined || v === null || v === '') return '—';
-                               if (Array.isArray(v)) return v.join(', ');
-                               if (typeof v === 'object' && v !== null) {
-                                 const entries = Object.entries(v).filter(([, n]) => n != null && n !== '');
-                                 if (isMultiQty && entries.length > 0) return entries.map(([k, n]) => `${k}×${n}`).join(' · ');
-                                 return JSON.stringify(v);
-                               }
-                               return String(v);
-                             };
-                             return customFields.map((field: ProductField) => {
-                               const val = getVal(field);
-                               const isMultiQty = field.type === FieldType.MULTI_SELECT_QUANTITY;
-                               return (
-                                 <div key={field.id} className="space-y-1 sm:space-y-1.5 text-left">
-                                   <p className="text-[7px] sm:text-[8px] font-black text-slate-600 uppercase tracking-widest">{field.name}</p>
-                                   <div className="text-[10px] sm:text-[11px] font-medium text-slate-300 leading-relaxed normal-case bg-white/5 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-white/5">
-                                     {formatVal(val, isMultiQty)}
-                                   </div>
-                                 </div>
-                               );
-                             });
-                          })()}
                        </div>
                     </div>
                  </div>
 
-                 {/* 卖点区 - 蓝色药丸标签（兼容 sellingPoints 字符串或 attributes.selling_points 数组） */}
+                 {/* 统一内容块：核心卖点 / 口碑对比 / 产品参数 / 贾维斯洞察 */}
                  {(() => {
-                   const sp = detailedProduct?.sellingPoints ?? detailedProduct?.attributes?.selling_points;
-                   const points = Array.isArray(sp) ? sp : (typeof sp === 'string' && sp ? sp.split(',').map((s: string) => s.trim()).filter(Boolean) : []);
-                   return points.length > 0 ? (
-                    <div className="premium-card p-8 border-blue-500/30 bg-blue-950/20">
-                       <div className="flex items-center gap-4 mb-6">
-                          <div className="size-10 bg-blue-600 rounded-xl flex items-center justify-center text-white"><Star size={20} /></div>
-                          <div>
-                             <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('core_sell_points')}</h4>
-                             <p className="text-[8px] font-black text-blue-400 uppercase tracking-widest mt-1">{t('product_sell_points')}</p>
-                          </div>
-                       </div>
-                       <div className="flex flex-wrap gap-3">
-                          {points.map((point: string, index: number) => (
-                             <div key={index} className="px-4 py-2 bg-blue-500/20 border border-blue-500/30 text-blue-300 text-[10px] font-black uppercase tracking-widest rounded-full flex items-center gap-2">
-                                <Zap size={12} className="text-blue-400" />
-                                {point}
-                             </div>
-                          ))}
-                       </div>
-                    </div>
-                 ) : null;
+                   const dp = detailedProduct as any;
+                   const att = (typeof dp?.attributes === 'string' ? (() => { try { return JSON.parse(dp?.attributes || '{}'); } catch { return {}; } })() : (dp?.attributes ?? {})) as Record<string, unknown>;
+                   const get = (k: string) => dp?.[k] ?? att?.[k];
+                   const fmt = (v: unknown): string => {
+                     if (v == null || v === '') return '—';
+                     if (Array.isArray(v)) return v.join(', ');
+                     if (typeof v === 'object') return JSON.stringify(v, null, 2);
+                     return String(v);
+                   };
+                   return <DetailBlocks get={get} fmt={fmt} t={t} cardClass="premium-card p-6 sm:p-8 rounded-2xl border" />;
                  })()}
-
-                 {/* 口碑对比卡片（兼容 top-level 或 attributes） */}
-                 {((detailedProduct?.pros ?? detailedProduct?.attributes?.pros) || (detailedProduct?.cons ?? detailedProduct?.attributes?.cons)) && (
-                    <div className="premium-card p-8 border-white/10">
-                       <div className="flex items-center gap-4 mb-6">
-                          <div className="size-10 bg-gradient-to-r from-green-500 to-red-500 rounded-xl flex items-center justify-center text-white"><MessageSquare size={20} /></div>
-                          <div>
-                             <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('review_compare')}</h4>
-                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">{t('customer_voice_analysis')}</p>
-                          </div>
-                       </div>
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                          {/* 好评 - 绿色 */}
-                          {(detailedProduct?.pros ?? detailedProduct?.attributes?.pros) && (
-                             <div className="space-y-4">
-                                <div className="flex items-center gap-3">
-                                   <div className="size-8 bg-green-500/20 rounded-lg flex items-center justify-center">
-                                      <ThumbsUp size={16} className="text-green-400" />
-                                   </div>
-                                   <h5 className="text-[10px] font-black text-green-400 uppercase tracking-widest">{t('pros_wordcloud')}</h5>
-                                </div>
-                                <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-2xl">
-                                   <p className="text-[11px] text-green-300 leading-relaxed">{detailedProduct?.pros ?? detailedProduct?.attributes?.pros}</p>
-                                </div>
-                             </div>
-                          )}
-                          {/* 差评 - 红色 */}
-                          {(detailedProduct?.cons ?? detailedProduct?.attributes?.cons) && (
-                             <div className="space-y-4">
-                                <div className="flex items-center gap-3">
-                                   <div className="size-8 bg-red-500/20 rounded-lg flex items-center justify-center">
-                                      <ThumbsDown size={16} className="text-red-400" />
-                                   </div>
-                                   <h5 className="text-[10px] font-black text-red-400 uppercase tracking-widest">{t('cons_wordcloud')}</h5>
-                                </div>
-                                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl">
-                                   <p className="text-[11px] text-red-300 leading-relaxed">{detailedProduct?.cons ?? detailedProduct?.attributes?.cons}</p>
-                                </div>
-                             </div>
-                          )}
-                       </div>
-                    </div>
-                 )}
-
-                 {/* 痛点高亮 - 警告框（兼容 top-level 或 attributes） */}
-                 {(detailedProduct?.rawReview ?? detailedProduct?.raw_review ?? detailedProduct?.attributes?.raw_review) && (
-                    <div className="premium-card p-8 border-red-500/50 bg-red-950/30 relative overflow-hidden">
-                       <div className="absolute top-0 right-0 p-4 opacity-20"><AlertTriangle size={80} className="text-red-400" /></div>
-                       <div className="flex items-start gap-4 mb-6">
-                          <div className="size-10 bg-red-600 rounded-xl flex items-center justify-center text-white flex-shrink-0 mt-1">
-                             <AlertTriangle size={20} />
-                          </div>
-                          <div className="flex-1">
-                             <h4 className="text-[12px] font-black uppercase tracking-widest text-red-400">⚠️ {t('key_pain_point')}</h4>
-                             <p className="text-[8px] font-black text-red-600 uppercase tracking-widest mt-1">{t('critical_pain_point')}</p>
-                          </div>
-                       </div>
-                       <div className="p-6 bg-red-500/10 border-2 border-red-500/30 rounded-2xl">
-                          <p className="text-[13px] font-bold text-red-300 leading-relaxed">"{detailedProduct?.rawReview ?? detailedProduct?.raw_review ?? detailedProduct?.attributes?.raw_review}"</p>
-                       </div>
-                    </div>
-                 )}
-
-                 {/* 贾维斯洞察 - 市场洞察（兼容 top-level 或 attributes） */}
-                 {(detailedProduct?.insightSummary ?? detailedProduct?.insight_summary ?? detailedProduct?.attributes?.insight_summary) && (
-                    <div className="premium-card p-10 border-purple-500/30 bg-purple-950/20 relative overflow-hidden group">
-                       <div className="absolute top-0 right-0 p-4 opacity-10"><Brain size={100} className="text-purple-400" /></div>
-                       <div className="flex items-center gap-4 mb-8">
-                          <div className="size-10 bg-purple-600 rounded-xl flex items-center justify-center text-white"><Brain size={20} /></div>
-                          <div>
-                             <h4 className="text-[12px] font-black uppercase tracking-widest text-white">{t('jarvis_insight')}</h4>
-                             <p className="text-[8px] font-black text-purple-400 uppercase tracking-widest mt-1">{t('market_opportunity_analysis')}</p>
-                          </div>
-                       </div>
-                       <div className="prose prose-invert max-w-none">
-                          <div className="text-purple-300 text-sm leading-relaxed whitespace-pre-wrap font-medium">{detailedProduct?.insightSummary ?? detailedProduct?.insight_summary ?? detailedProduct?.attributes?.insight_summary}</div>
-                       </div>
-                    </div>
-                 )}
               </div>
            </div>
         </div>

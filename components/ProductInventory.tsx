@@ -9,12 +9,13 @@ import {
   Layout, Layers, Trophy, Filter, Eye, MoreHorizontal, Settings,
   ChevronLeft, ChevronRight, ThumbsUp, ThumbsDown, AlertTriangle
 } from 'lucide-react';
-import { ProductData, ProductField, FieldType, User, Category } from '../types';
-import { DEFAULT_CHANNEL_OPTIONS } from '../constants';
+import { ProductData, ProductField, FieldType, User, Category, Language } from '../types';
+import { DEFAULT_CHANNEL_OPTIONS, CONTENT_FIELD_IDS, CONTENT_FIELDS } from '../constants';
 import { getAuthToken } from '../lib/authToken';
 import { ImageInput } from './ImageInput';
 import { ProductEditModal } from './ProductEditModal';
 import { Select } from './Select';
+import { DetailBlocks } from './DetailBlocks';
 
 interface ProductInventoryProps {
   products: ProductData[];
@@ -26,6 +27,7 @@ interface ProductInventoryProps {
   isAddModalOpen: boolean;
   setIsAddModalOpen: (open: boolean) => void;
   t: (key: string) => string;
+  language?: Language;
 }
 
 const MultiQuantityInput: React.FC<{ options: string[]; value: Record<string, number>; onChange: (val: Record<string, number>) => void; }> = ({ options, value = {}, onChange }) => {
@@ -112,7 +114,7 @@ const StarRatingInput: React.FC<{ value: number | string; onChange: (val: number
 };
 
 export const ProductInventory: React.FC<ProductInventoryProps> = ({
-  products: productsProp, categories: categoriesProp, onAdd, onUpdate, onDelete, currentUser: currentUserProp, isAddModalOpen, setIsAddModalOpen, t
+  products: productsProp, categories: categoriesProp, onAdd, onUpdate, onDelete, currentUser: currentUserProp, isAddModalOpen, setIsAddModalOpen, t, language = 'zh'
 }) => {
   const products = productsProp ?? [];
   const categories = categoriesProp ?? [];
@@ -433,6 +435,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
           }}
           onClose={handleCloseEditModal}
           t={t}
+          language={language}
         />
       )}
 
@@ -548,124 +551,18 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                   </div>
                 </div>
                 
-                {/* 口碑与调研 */}
+                {/* 统一内容块：核心卖点 / 口碑对比 / 产品参数 / 贾维斯洞察 */}
                 {(() => {
-                  const norm = getNormalizedProduct(selectedProduct);
+                  const norm = getNormalizedProduct(selectedProduct) as Record<string, unknown>;
                   const get = (k: string) => norm[k] ?? (selectedProduct?.attributes as Record<string, unknown>)?.[k];
-                  const items = [
-                    { label: t('pros'), val: get('pros'), type: 'pros' as const },
-                    { label: t('cons'), val: get('cons'), type: 'cons' as const },
-                    { label: t('pain_point'), val: get('raw_review') ?? get('rawReview'), type: 'text' as const },
-                    { label: t('insight_summary'), val: get('insight_summary') ?? get('insightSummary'), type: 'text' as const },
-                    { label: '搜索关键词', val: get('search_keywords'), type: 'text' as const },
-                    { label: t('sell_points'), val: get('selling_points') ?? get('sellingPoints'), type: 'text' as const },
-                  ].filter(x => x.val != null && x.val !== '');
-                  if (items.length === 0) return null;
-                  return (
-                    <div className="premium-card p-8 border-white/10">
-                      <div className="flex items-center gap-4 mb-6">
-                        <div className="size-10 bg-amber-600/20 rounded-xl flex items-center justify-center"><ThumbsUp size={20} className="text-amber-400" /></div>
-                        <div>
-                          <h4 className="type-section-title">{t('customer_voice_analysis')}</h4>
-                          <p className="type-section-subtitle mt-1">{t('pros')} / {t('cons')} / {t('insight_summary')}</p>
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        {items.map(({ label, val, type }) => (
-                          <div key={label} className={`p-4 rounded-2xl border ${type === 'pros' ? 'bg-green-500/10 border-green-500/20' : type === 'cons' ? 'bg-red-500/10 border-red-500/20' : 'bg-slate-900/50 border-white/5'}`}>
-                            <div className="flex items-center gap-2 mb-2">
-                              {type === 'pros' && <ThumbsUp size={14} className="text-green-400" />}
-                              {type === 'cons' && <ThumbsDown size={14} className="text-red-400" />}
-                              <span className="type-label">{label}</span>
-                            </div>
-                            <p className="type-value leading-relaxed whitespace-pre-wrap">{typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-                
-                {/* 品类自定义字段 */}
-                {(() => {
-                  const FIXED_IDS = ['brand', 'model', 'linkUrl', 'channel', 'shopName', 'price', 'actualPrice', 'monthlySales', 'rating', 'mainImage', 'link_url', 'main_image', 'pros', 'cons', 'proPoints', 'conPoints', 'raw_review', 'rawReview', 'insight_summary', 'insightSummary', 'selling_points', 'sellingPoints', 'search_keywords'];
-                  const isProsConsLike = (f: ProductField) => ['pros', 'cons', 'proPoints', 'conPoints'].includes(f.id) || /好评|差评|pros|cons/i.test(f.name || '');
-                  const isSearchKeywordsLike = (f: ProductField) => f.id === 'search_keywords' || /搜索关键词/.test(f.name || '');
-                  const activeCat = categories.find(c => c.id === selectedProduct?.categoryId);
-                  const customFields = (activeCat?.fields ?? []).filter(f => f?.id && f?.name && !FIXED_IDS.includes(f.id) && !isProsConsLike(f) && !isSearchKeywordsLike(f));
-                  if (customFields.length === 0) return null;
-                  const norm = getNormalizedProduct(selectedProduct);
-                  const getVal = (f: ProductField) => norm[f.id] ?? (selectedProduct?.attributes as Record<string, unknown>)?.[f.id];
-                  const formatVal = (v: unknown, isMultiQty?: boolean): React.ReactNode => {
-                    if (v === undefined || v === null || v === '') return null;
+                  const fmt = (v: unknown): string => {
+                    if (v == null || v === '') return '—';
                     if (Array.isArray(v)) return v.join(', ');
-                    if (typeof v === 'object' && v !== null) {
-                      const entries = Object.entries(v).filter(([, n]) => n != null && n !== '');
-                      if (isMultiQty && entries.length > 0) return entries.map(([k, n]) => `${k}×${n}`).join(' · ');
-                      return JSON.stringify(v, null, 2);
-                    }
+                    if (typeof v === 'object') return JSON.stringify(v, null, 2);
                     return String(v);
                   };
-                  return (
-                    <div className="premium-card p-8 border-white/10">
-                      <div className="flex items-center gap-4 mb-6">
-                        <div className="size-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white">
-                          <Database size={20} />
-                        </div>
-                        <div>
-                          <h4 className="type-section-title">{t('category_params')}</h4>
-                          <p className="type-section-subtitle mt-1 text-indigo-400">{activeCat?.name} · {t('category_params_hint')}</p>
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        {customFields.map((field) => {
-                          const val = getVal(field);
-                          const isPros = /好评|pros/i.test(field.name) || field.id === 'pros';
-                          const isCons = /差评|cons/i.test(field.name) || field.id === 'cons';
-                          if (isPros || isCons) {
-                            return (
-                              <div key={field.id} className={`p-4 rounded-2xl border ${isPros ? 'bg-green-500/10 border-green-500/20' : 'bg-red-500/10 border-red-500/20'}`}>
-                                <div className="flex items-center gap-2 mb-2">
-                                  {isPros ? <ThumbsUp size={14} className="text-green-400" /> : <ThumbsDown size={14} className="text-red-400" />}
-                                  <span className={`type-label ${isPros ? 'text-green-400' : 'text-red-400'}`}>{field.name}</span>
-                                </div>
-                                <p className={`type-value leading-relaxed ${isPros ? 'text-green-300' : 'text-red-300'}`}>
-                                  {val ? formatVal(val) : <span className="opacity-50 italic">{t('no_data_caption')}</span>}
-                                </p>
-                              </div>
-                            );
-                          }
-                          const isMultiQty = field.type === FieldType.MULTI_SELECT_QUANTITY;
-                          return (
-                            <div key={field.id} className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-900/50 rounded-xl border border-white/5">
-                              <div className="md:col-span-1">
-                                <span className="type-label">{field.name}</span>
-                              </div>
-                              <div className="md:col-span-2">
-                                {val ? (typeof val === 'object' && !Array.isArray(val) ? (isMultiQty ? <p className="type-value text-slate-300">{formatVal(val, true)}</p> : <pre className="text-xs font-mono text-slate-300 whitespace-pre-wrap">{formatVal(val)}</pre>) : <p className="type-value text-slate-300">{String(val)}</p>) : <span className="type-caption italic">—</span>}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
+                  return <DetailBlocks get={get} fmt={fmt} t={t} cardClass="p-4 sm:p-6 rounded-2xl border" />;
                 })()}
-                
-                {/* 产品链接 */}
-                {(selectedProduct?.linkUrl || selectedProduct?.attributes?.link_url) && (
-                  <div className="premium-card p-6 border-white/10">
-                    <a
-                      href={String(selectedProduct?.linkUrl || selectedProduct?.attributes?.link_url)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full bg-gradient-to-r from-blue-600 to-purple-600 border border-blue-500/30 text-white px-6 py-4 rounded-xl font-black uppercase tracking-widest hover:from-blue-700 hover:to-purple-700 transition-all flex items-center justify-center gap-3"
-                    >
-                      <ExternalLink size={18} />
-                      {t('visit_source_link')}
-                    </a>
-                  </div>
-                )}
               </div>
           </div>
           
@@ -998,6 +895,11 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                             <StarRatingInput value={formData.rating ?? ''} onChange={(val) => setFormData({...formData, rating: val})} />
                          </div>
                          
+                         <div className="space-y-3">
+                            <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('record_date')}</label>
+                            <input type="date" className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 normal-case" value={formData.period ?? ''} onChange={e => setFormData({...formData, period: e.target.value})} />
+                         </div>
+                         
                          <div className="space-y-3 md:col-span-2">
                             <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1 flex items-center gap-2">
                                {t('link_url')}
@@ -1016,7 +918,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       </div>
                    </div>
                    
-                   {/* 编辑时展示：口碑与调研，与详情/抽屉一致，避免后台有数据但表单为空 */}
+                   {/* 编辑时展示：自定义字段（容量、快充协议、重量、尺寸、LED、输入/输出端口、好评、差评、搜索关键词、核心卖点、产品洞察） */}
                    {editingId && (
                      <div className="space-y-5 sm:space-y-8">
                        <div className="flex items-center gap-3 sm:gap-4 pb-4 sm:pb-6 border-b border-white/5">
@@ -1025,34 +927,23 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                          </div>
                          <div>
                            <h4 className="text-sm font-black text-white uppercase tracking-widest">{t('customer_voice_analysis')}</h4>
-                           <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">{t('pros')} / {t('cons')} / {t('insight_summary')}</p>
+                           <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mt-1">{CONTENT_FIELDS.map(f => f.name).join(' · ')}</p>
                          </div>
                        </div>
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                         <div className="space-y-3 md:col-span-2">
-                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pros')}</label>
-                           <textarea className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 min-h-[80px] normal-case" value={formData.pros ?? ''} onChange={e => setFormData({...formData, pros: e.target.value})} />
-                         </div>
-                         <div className="space-y-3 md:col-span-2">
-                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('cons')}</label>
-                           <textarea className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 min-h-[80px] normal-case" value={formData.cons ?? ''} onChange={e => setFormData({...formData, cons: e.target.value})} />
-                         </div>
-                         <div className="space-y-3 md:col-span-2">
-                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('pain_point')}</label>
-                           <textarea className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 min-h-[60px] normal-case" value={formData.raw_review ?? formData.rawReview ?? ''} onChange={e => setFormData({...formData, raw_review: e.target.value, rawReview: e.target.value})} />
-                         </div>
-                         <div className="space-y-3 md:col-span-2">
-                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('insight_summary')}</label>
-                           <textarea className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 min-h-[100px] normal-case" value={formData.insight_summary ?? formData.insightSummary ?? ''} onChange={e => setFormData({...formData, insight_summary: e.target.value, insightSummary: e.target.value})} />
-                         </div>
-                         <div className="space-y-3 md:col-span-2">
-                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">搜索关键词</label>
-                           <textarea className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 min-h-[60px] normal-case" value={formData.search_keywords ?? ''} onChange={e => setFormData({...formData, search_keywords: e.target.value})} />
-                         </div>
-                         <div className="space-y-3 md:col-span-2">
-                           <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{t('sell_points')}</label>
-                           <input type="text" className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 normal-case" value={Array.isArray(formData.sellingPoints) ? formData.sellingPoints.join(', ') : (formData.selling_points ?? formData.sellingPoints ?? '')} onChange={e => setFormData({...formData, sellingPoints: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean), selling_points: e.target.value})} />
-                         </div>
+                         {CONTENT_FIELDS.map(f => {
+                           const isSp = f.id === 'selling_points';
+                           const val = isSp ? (Array.isArray(formData.sellingPoints) ? formData.sellingPoints.join(', ') : (formData.selling_points ?? formData.sellingPoints ?? '')) : (formData[f.id] ?? '');
+                           const isWide = f.type === FieldType.TEXTAREA;
+                           return (
+                             <div key={f.id} className={`space-y-3 ${isWide ? 'md:col-span-2' : ''}`}>
+                               <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">{f.name}</label>
+                               {f.type === FieldType.NUMBER && <input type="number" step="any" className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 normal-case" value={val} onChange={e => setFormData({...formData, [f.id]: e.target.value === '' ? '' : Number(e.target.value)})} />}
+                               {f.type === FieldType.TEXTAREA && <textarea className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 min-h-[80px] normal-case" value={val} onChange={e => setFormData({...formData, [f.id]: e.target.value, ...(isSp ? { sellingPoints: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) } : {})})} />}
+                               {f.type === FieldType.TEXT && <input type="text" className="w-full bg-slate-900 border border-white/5 rounded-xl px-4 py-3.5 text-[10px] font-medium text-white outline-none focus:border-[#A3E635]/40 normal-case" value={val} onChange={e => setFormData({...formData, [f.id]: e.target.value})} />}
+                             </div>
+                           );
+                         })}
                        </div>
                      </div>
                    )}
@@ -1072,13 +963,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                          
                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {activeCategory.fields
-                              .filter((f) => {
-                                if (!f?.id) return false;
-                                const skip = ['pros', 'cons', 'raw_review', 'rawReview', 'insight_summary', 'insightSummary', 'search_keywords', 'selling_points', 'sellingPoints'];
-                                if (skip.includes(f.id)) return false;
-                                if (/搜索关键词/.test(f.name || '')) return false;
-                                return true;
-                              })
+                              .filter((f) => f?.id && !CONTENT_FIELD_IDS.includes(f.id))
                               .map((field) => {
                               if (!field?.id || !field?.name || !field?.type) return null;
                               const isWide = field.type === FieldType.MULTI_SELECT_QUANTITY || field.type === FieldType.TEXTAREA;
@@ -1135,19 +1020,21 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                       <button onClick={() => {
                         const p = detailedProduct as any;
                         const att = (typeof p?.attributes === 'string' ? (() => { try { return JSON.parse(p.attributes || '{}'); } catch { return {}; } })() : (p?.attributes ?? {})) as Record<string, unknown>;
-                        const base: Record<string, any> = {
-                          ...p,
-                          linkUrl: p?.linkUrl ?? att?.link_url ?? '',
-                          mainImage: p?.mainImage ?? att?.main_image ?? '',
-                          sellingPoints: att?.selling_points ?? p?.selling_points ?? (typeof p?.sellingPoints === 'string' ? (p.sellingPoints as string).split(',').map((s: string) => s.trim()) : p?.sellingPoints) ?? [],
-                          pros: p?.pros ?? att?.pros ?? '',
-                          cons: p?.cons ?? att?.cons ?? '',
-                          raw_review: p?.raw_review ?? p?.rawReview ?? att?.raw_review ?? '',
-                          rawReview: p?.raw_review ?? p?.rawReview ?? att?.raw_review ?? '',
-                          insight_summary: p?.insight_summary ?? p?.insightSummary ?? att?.insight_summary ?? '',
-                          insightSummary: p?.insight_summary ?? p?.insightSummary ?? att?.insight_summary ?? '',
-                          search_keywords: p?.search_keywords ?? att?.search_keywords ?? ''
-                        };
+                        const base: Record<string, any> = { ...p };
+                        base.linkUrl = p?.linkUrl ?? att?.link_url ?? '';
+                        base.mainImage = p?.mainImage ?? att?.main_image ?? '';
+                        base.period = p?.period ?? att?.period ?? '';
+                        CONTENT_FIELDS.forEach(f => {
+                          const v = att?.[f.id] ?? p?.[f.id];
+                          if (f.id === 'selling_points') {
+                            const arr = Array.isArray(v) ? v : (typeof v === 'string' && v ? (v as string).split(',').map((s: string) => s.trim()).filter(Boolean) : []);
+                            base.selling_points = arr.join(', ');
+                            base.sellingPoints = arr;
+                          } else {
+                            base[f.id] = v != null && v !== '' ? String(v) : '';
+                          }
+                        });
+                        if (base.insight_summary) base.insightSummary = base.insight_summary;
                         Object.entries(att).forEach(([k, v]) => { if (v !== undefined && v !== null && base[k] === undefined) base[k] = v; });
                         setEditingId(p?.id);
                         setFormData(base);
@@ -1183,30 +1070,17 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                              <p className="text-2xl sm:text-4xl font-black text-[#A3E635] font-num">{(Number(detailedProduct?.monthlySales) || 0).toLocaleString()}</p>
                           </div>
                        </div>
-                       {/* 口碑与调研：好评、差评、关键痛点、洞察、搜索关键词、卖点（统一从解析后的 attributes 取数） */}
+                       {/* 统一内容块：核心卖点 / 口碑对比 / 产品参数 / 贾维斯洞察 */}
                        {(() => {
                           const p = getNormalizedProduct(detailedProduct || null) as Record<string, unknown>;
                           const get = (k: string) => p[k] ?? (detailedProduct as any)?.attributes?.[k];
-                          const blocks = [
-                            { key: 'pros', label: t('pros'), val: get('pros'), highlight: 'green' },
-                            { key: 'cons', label: t('cons'), val: get('cons'), highlight: 'red' },
-                            { key: 'raw_review', label: t('pain_point'), val: get('raw_review') ?? get('rawReview') },
-                            { key: 'insight_summary', label: t('insight_summary'), val: get('insight_summary') ?? get('insightSummary') },
-                            { key: 'search_keywords', label: '搜索关键词', val: get('search_keywords') },
-                            { key: 'selling_points', label: t('sell_points'), val: get('selling_points') ?? get('sellingPoints') },
-                          ];
-                          return (
-                            <div className="space-y-4 sm:space-y-5">
-                              {blocks.filter(b => b.val).map(({ key, label, val, highlight }) => (
-                                <div key={key} className={`space-y-1 sm:space-y-1.5 text-left p-3 sm:p-4 rounded-xl border ${highlight === 'green' ? 'bg-green-500/5 border-green-500/20' : highlight === 'red' ? 'bg-red-500/5 border-red-500/20' : 'bg-white/5 border-white/5'}`}>
-                                  <p className="text-[7px] sm:text-[8px] font-black text-slate-600 uppercase tracking-widest">{label}</p>
-                                  <div className="text-[10px] sm:text-[11px] font-medium text-slate-300 leading-relaxed normal-case whitespace-pre-wrap">
-                                    {typeof val === 'object' ? JSON.stringify(val, null, 2) : String(val)}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          );
+                          const fmt = (v: unknown): string => {
+                            if (v == null || v === '') return '—';
+                            if (Array.isArray(v)) return v.join(', ');
+                            if (typeof v === 'object') return JSON.stringify(v, null, 2);
+                            return String(v);
+                          };
+                          return <DetailBlocks get={get} fmt={fmt} t={t} cardClass="p-3 sm:p-4 rounded-xl border" />;
                        })()}
                        {/* 规格与其他属性：重量、容量、最大输出等（统一从解析后的 attributes 取数） */}
                        <div className="space-y-4 sm:space-y-5 pt-4 border-t border-white/5">
@@ -1220,7 +1094,7 @@ export const ProductInventory: React.FC<ProductInventoryProps> = ({
                               selling_point_type: '卖点类型', differentiation: '差异化', bundle: '配件/套装', warranty: '保修', packaging: '包装',
                               period: '记录日期', dataReliability: '数据可信度', remark: '备注',
                             };
-                            const skip = new Set(['id', 'categoryId', 'createdAt', 'updatedAt', 'updatedBy', 'mainImage', 'price', 'monthlySales', 'model', 'brand', 'channel', 'pros', 'cons', 'raw_review', 'rawReview', 'insight_summary', 'insightSummary', 'search_keywords', 'selling_points', 'sellingPoints', 'attributes']);
+                            const skip = new Set(['id', 'categoryId', 'createdAt', 'updatedAt', 'updatedBy', 'mainImage', 'price', 'monthlySales', 'model', 'brand', 'channel', 'period', 'linkUrl', 'link_url', 'attributes', ...CONTENT_FIELD_IDS]);
                             return Object.entries(p)
                               .filter(([k, v]) => !skip.has(k) && v !== undefined && v !== null && v !== '')
                               .map(([key, val]) => (

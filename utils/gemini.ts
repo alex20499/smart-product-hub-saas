@@ -6,20 +6,25 @@
  * 
  * 密钥始终保留在服务端，前端不接触 API Key
  */
-const MODEL = 'gemma-3-4b-it';
+/** 与 api/gemini 默认一致；Google AI Studio 可用：gemini-2.0-flash / gemini-1.5-flash 等 */
+const MODEL = 'gemini-2.0-flash';
 
 /** 简化产品数据用于 AI 分析，避免过大或复杂结构导致空响应 */
+const AI_PICK_KEYS = ['brand', 'model', 'price', 'channel', 'shopName', 'rating', 'monthlySales', 'selling_points', 'sellingPoints', 'pros', 'cons', 'capacity_mah', 'battery_life', 'search_keywords'];
+
 export function simplifyForAI(obj: Record<string, unknown>): Record<string, unknown> {
-  const pick = (o: Record<string, unknown>, keys: string[]) => {
+  const pick = (o: Record<string, unknown> | null, keys: string[]) => {
+    if (!o || typeof o !== 'object') return {};
     const r: Record<string, unknown> = {};
     keys.forEach(k => { if (o[k] !== undefined && o[k] !== null) r[k] = o[k]; });
     return r;
   };
-  const core = pick(obj as Record<string, unknown>, ['brand', 'model', 'price', 'channel', 'shopName', 'rating', 'monthlySales']);
+  const o = obj as Record<string, unknown>;
   const attrs = obj.attributes && typeof obj.attributes === 'object'
-    ? pick(obj.attributes as Record<string, unknown>, ['selling_points', 'sellingPoints', 'pros', 'cons', 'capacity_mah', 'battery_life'])
+    ? pick(obj.attributes as Record<string, unknown>, AI_PICK_KEYS)
     : {};
-  return { ...core, ...attrs };
+  const fromTop = pick(o, AI_PICK_KEYS);
+  return { ...attrs, ...fromTop };
 }
 
 function extractText(data: any): string {

@@ -9,8 +9,8 @@ import { ProductInventory } from './components/ProductInventory';
 import { Settings } from './components/Settings';
 import { UserManagement } from './components/UserManagement';
 import { Login } from './components/Login';
-import { AppState, Category, User, Language } from './types';
-import { DEFAULT_CATEGORIES, STORAGE_KEY, MOCK_PRODUCTS, TRANSLATIONS } from './constants';
+import { AppState, Category, User, Language, FieldType } from './types';
+import { DEFAULT_CATEGORIES, STORAGE_KEY, MOCK_PRODUCTS, TRANSLATIONS, CONTENT_FIELDS } from './constants';
 import { ShieldAlert, RefreshCw } from 'lucide-react';
 
 const INITIAL_USERS: User[] = [
@@ -113,7 +113,7 @@ const App: React.FC = () => {
       }
 
       // 将品类模板转换为前端需要的 Category.fields 格式
-      const categoriesWithFields = cloudCats.map((cat: any) => {
+      let categoriesWithFields = cloudCats.map((cat: any) => {
         const templates = cloudTemplates.filter((t: any) => t.category_id === cat.id && t.is_active);
         const fields = templates
           .sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
@@ -130,6 +130,19 @@ const App: React.FC = () => {
           ...cat,
           fields
         };
+      });
+
+      // 充电宝：若云端模板缺少与详情页一致的内容字段，则合并统一定义（链接 + 卖点/好评/差评/关键痛点/市场洞察/搜索关键词）
+      const contentFieldsWithLink = [
+        { id: 'linkUrl', name: '产品链接', type: FieldType.URL, required: false },
+        ...CONTENT_FIELDS,
+      ];
+      categoriesWithFields = categoriesWithFields.map((cat: any) => {
+        if (cat.id !== 'cat_powerbank') return cat;
+        const existingIds = new Set((cat.fields ?? []).map((f: any) => f.id));
+        const toAdd = contentFieldsWithLink.filter((f: any) => !existingIds.has(f.id));
+        if (toAdd.length === 0) return cat;
+        return { ...cat, fields: [...(cat.fields ?? []), ...toAdd] };
       });
 
       console.log('✅ 数据转换完成，品类数量:', categoriesWithFields.length);
@@ -914,6 +927,7 @@ const App: React.FC = () => {
             products={state.products} categories={state.categories} 
             onAdd={handleProductAdd} onUpdate={handleProductUpdate} onDelete={handleProductDelete}
             currentUser={state.currentUser} isAddModalOpen={isAddModalOpen} setIsAddModalOpen={setIsAddModalOpen} t={t}
+            language={state.language}
           />
         )}
         {state.view === 'settings' && (

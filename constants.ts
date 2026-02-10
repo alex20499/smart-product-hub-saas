@@ -59,6 +59,8 @@ export const TRANSLATIONS: Record<Language, any> = {
     close: "Terminate Session",
     ai_insights: "AI Market Intelligence",
     generate_insight: "Generate Strategy Report",
+    generating: "Generating…",
+    generate_insight_failed: "AI request failed. Check GEMINI_API_KEY or try again.",
     analyzing: "AI Analyzing Global Data...",
     search_placeholder: "Search SKU, Brand, Keywords...",
     ai_analysis_btn: "AI Deep Analysis",
@@ -135,6 +137,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     panel_discount_hint: "Avg discount rate (list vs actual price) by channel",
     panel_flow_sankey: "Channel → Category → Price segment",
     panel_flow_sankey_hint: "Flow of sales from channel to category to price tier (line width = volume)",
+    panel_flow_sankey_scroll_hint: "Narrow screen: scroll horizontally to view full chart",
     flow_column_pct: "in column",
     flow_total_pct: "total",
     select_single_channel: "Select a single channel to view category comparison",
@@ -161,6 +164,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     price_label: "Price (¥)",
     actual_price: "Actual Price / After Coupon",
     monthly_sales: "Monthly Sales",
+    record_date: "Record Date",
     units_per_month: "units/mo",
     rating_label: "Rating (0-5)",
     link_url: "Product Link",
@@ -199,6 +203,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     cons: "Cons",
     pain_point: "Pain Point",
     insight_summary: "Market Insight",
+    search_keywords_label: "Search Keywords",
     unknown_brand: "Unknown Brand",
     unknown_channel: "Unknown Channel",
     login_id: "Login ID",
@@ -340,6 +345,8 @@ export const TRANSLATIONS: Record<Language, any> = {
     close: "关闭窗口",
     ai_insights: "AI 市场洞察",
     generate_insight: "生成市场分析策略",
+    generating: "生成中…",
+    generate_insight_failed: "AI 请求失败，请检查 GEMINI_API_KEY 或稍后重试。",
     analyzing: "AI 正在分析全域数据...",
     search_placeholder: "搜索品牌、型号、卖点或差评关键词...",
     ai_analysis_btn: "AI 单品深度分析",
@@ -416,6 +423,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     panel_discount_hint: "各渠道平均折扣率（原价 vs 到手价）",
     panel_flow_sankey: "渠道 → 品类 → 价格带",
     panel_flow_sankey_hint: "销量从渠道到品类再到价格带的分布，线宽表示销量",
+    panel_flow_sankey_scroll_hint: "窄屏可左右滑动查看完整图表",
     flow_column_pct: "本列",
     flow_total_pct: "全量",
     select_single_channel: "请选择单一渠道查看品类对比",
@@ -442,6 +450,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     price_label: "价格 (¥)",
     actual_price: "到手价/券后",
     monthly_sales: "月销量",
+    record_date: "记录日期",
     units_per_month: "件/月",
     rating_label: "评分 (0-5)",
     link_url: "产品链接",
@@ -480,6 +489,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     cons: "差评",
     pain_point: "关键痛点",
     insight_summary: "市场洞察",
+    search_keywords_label: "搜索关键词",
     unknown_brand: "未知品牌",
     unknown_channel: "未知渠道",
     login_id: "登录ID",
@@ -621,6 +631,8 @@ export const TRANSLATIONS: Record<Language, any> = {
     close: "閉じる",
     ai_insights: "AI戦略インサイト",
     generate_insight: "戦略レポート作成",
+    generating: "生成中…",
+    generate_insight_failed: "AI リクエストに失敗しました。GEMINI_API_KEY を確認するか、しばらくして再試行してください。",
     analyzing: "AIがデータを分析中...",
     search_placeholder: "ブランド、型番、キーワードを検索...",
     ai_analysis_btn: "AI詳細分析",
@@ -697,6 +709,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     panel_discount_hint: "チャネル別平均値引率（定価 vs 実売価格）",
     panel_flow_sankey: "チャネル → カテゴリ → 価格帯",
     panel_flow_sankey_hint: "チャネル→カテゴリ→価格帯の売上分布（線の太さ＝売上）",
+    panel_flow_sankey_scroll_hint: "狭い画面では横スクロールで全体をご覧ください",
     flow_column_pct: "当列",
     flow_total_pct: "全体",
     select_single_channel: "カテゴリ比較を見るにはチャネルを1つ選択してください",
@@ -723,6 +736,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     price_label: "価格 (¥)",
     actual_price: "実質価格/クーポン後",
     monthly_sales: "月間販売数",
+    record_date: "記録日付",
     units_per_month: "件/月",
     rating_label: "評価 (0-5)",
     link_url: "製品リンク",
@@ -761,6 +775,7 @@ export const TRANSLATIONS: Record<Language, any> = {
     cons: "低評価",
     pain_point: "重要な課題",
     insight_summary: "市場インサイト",
+    search_keywords_label: "検索キーワード",
     unknown_brand: "不明なブランド",
     unknown_channel: "不明なチャネル",
     login_id: "ログインID",
@@ -854,19 +869,13 @@ export const TRANSLATIONS: Record<Language, any> = {
 // 渠道默认选项 - 无产品数据时的兜底，实际以产品表 channel 字段为准
 export const DEFAULT_CHANNEL_OPTIONS = ['Amazon', 'Rakuten', 'Yahoo Shopping'];
 
-// 核心系统默认字段 - 固定字段，不作为动态属性
-export const CORE_SYSTEM_FIELDS: ProductField[] = [
-  { id: 'brand', name: '品牌', type: FieldType.TEXT, required: true },
-  { id: 'model', name: '产品名/型号', type: FieldType.TEXT, required: true },
-  { id: 'linkUrl', name: '产品链接', type: FieldType.URL, required: false },
-  { id: 'channel', name: '渠道/平台', type: FieldType.SELECT, required: true, options: ['Amazon', 'Rakuten', 'Yahoo Shopping'] },
-  { id: 'shopName', name: '店铺名', type: FieldType.TEXT, required: false },
-  { id: 'price', name: '价格', type: FieldType.NUMBER, required: true },
-  { id: 'actualPrice', name: '到手价/券后', type: FieldType.NUMBER, required: false },
-  { id: 'monthlySales', name: '月销量', type: FieldType.NUMBER, required: false },
-  { id: 'rating', name: '评分', type: FieldType.RATING, required: false },
-  { id: 'mainImage', name: '主图', type: FieldType.IMAGE, required: false },
-];
+// 从统一字段定义派生（全站与 fieldDefinitions.ts 保持一致）
+export { CORE_FIELD_IDS, CONTENT_FIELD_IDS, CONTENT_FIELD_IDS as DETAIL_PAGE_CONTENT_FIELD_IDS, CORE_FIELDS, CONTENT_FIELDS, DETAIL_BLOCK_KEYS, getDetailLabelKey, getCoreLabelKey } from './fieldDefinitions';
+
+import { CONTENT_FIELDS, CORE_FIELDS } from './fieldDefinitions';
+
+// 核心系统默认字段 = 统一定义中的固定字段
+export const CORE_SYSTEM_FIELDS: ProductField[] = [...CORE_FIELDS];
 
 // 品类特定动态字段 - 新建品类默认包含（电商共性 + 调研扩展）
 export const CATEGORY_SPECIFIC_FIELDS: ProductField[] = [
@@ -895,7 +904,6 @@ export const BASE_SYSTEM_FIELDS: ProductField[] = [
   { id: 'actualPrice', name: '到手价/券后', type: FieldType.NUMBER, required: false },
   { id: 'monthlySales', name: '月销量线索', type: FieldType.NUMBER, required: true },
   { id: 'rating', name: '评分', type: FieldType.RATING, required: false },
-  { id: 'mainImage', name: '调研主图', type: FieldType.IMAGE, required: false },
 ];
 
 export const RESEARCH_FIELDS: ProductField[] = [
@@ -913,9 +921,16 @@ export const INITIAL_FIELDS: ProductField[] = [...BASE_SYSTEM_FIELDS, ...RESEARC
 const TODAY = new Date().toISOString().split('T')[0];
 const NOW = Date.now();
 
+// 与详情/编辑页一致：来自 fieldDefinitions 的链接 + 内容字段
+const VOICE_RESEARCH_FIELDS: ProductField[] = [
+  { id: 'linkUrl', name: '产品链接', type: FieldType.URL, required: false },
+  ...CONTENT_FIELDS,
+];
+
 const POWERBANK_FIELDS: ProductField[] = [
   ...BASE_SYSTEM_FIELDS,
   ...RESEARCH_FIELDS,
+  ...VOICE_RESEARCH_FIELDS,
   { id: 'capacity_mah', name: '容量 (mAh)', type: FieldType.NUMBER, required: false },
   { id: 'max_output', name: '最大输出 (W)', type: FieldType.NUMBER, required: false },
 ];

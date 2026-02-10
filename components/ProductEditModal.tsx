@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Check, RefreshCw, Trash2, Package } from 'lucide-react';
-import { ProductData, ProductField, FieldType, Category } from '../types';
+import { X, Check, RefreshCw, Trash2, Package, Sparkles } from 'lucide-react';
+import { ProductData, ProductField, FieldType, Category, Language } from '../types';
 import { ImageInput } from './ImageInput';
+import { callGemini, simplifyForAI } from '../utils/gemini';
+import { CONTENT_FIELDS, CONTENT_FIELD_IDS } from '../constants';
 
 interface ProductEditModalProps {
   product: ProductData;
@@ -11,6 +13,7 @@ interface ProductEditModalProps {
   onDelete: (id: string) => Promise<void>;
   onClose: () => void;
   t: (key: string) => string;
+  language?: Language;
 }
 
 const MultiQuantityInput: React.FC<{ options: string[]; value: Record<string, number>; onChange: (val: Record<string, number>) => void }> = ({ options, value = {}, onChange }) => {
@@ -65,40 +68,59 @@ const StarRatingInput: React.FC<{ value: string | number; onChange: (val: number
   );
 };
 
-export const ProductEditModal: React.FC<ProductEditModalProps> = ({ product, categories, onSave, onDelete, onClose, t }) => {
+const LANG_INSTRUCTION: Record<Language, string> = {
+  zh: '用中文写一段 2～4 句话的市场洞察，只输出正文不要标题。',
+  en: 'Write 2-4 sentences of market insight in English. Output only the body text, no title.',
+  ja: '日本語で 2～4 文の市場インサイトを書いてください。本文のみ出力し、タイトルは不要。',
+};
+
+export const ProductEditModal: React.FC<ProductEditModalProps> = ({ product, categories, onSave, onDelete, onClose, t, language = 'zh' }) => {
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [isGeneratingInsight, setIsGeneratingInsight] = useState(false);
+  const [insightError, setInsightError] = useState<string | null>(null);
   const formRef = useRef<HTMLDivElement>(null);
 
-  // 初始化表单数据
+  // 初始化表单数据（好评/差评等优先从 attributes 取，避免后台有数据但编辑页空白）
   useEffect(() => {
     if (!product) return;
     const p = product as any;
-    const att = typeof p?.attributes === 'string' 
-      ? (() => { try { return JSON.parse(p.attributes || '{}'); } catch { return {}; } })() 
+    const att = typeof p?.attributes === 'string'
+      ? (() => { try { return JSON.parse(p.attributes || '{}'); } catch { return {}; } })()
       : (p?.attributes ?? {}) as Record<string, unknown>;
-    
-    const base: Record<string, any> = {
-      ...product,
-      linkUrl: p?.linkUrl ?? att?.link_url ?? '',
-      mainImage: p?.mainImage ?? att?.mainImage ?? att?.main_image ?? '',
-      sellingPoints: att?.selling_points ?? p?.selling_points ?? 
-        (Array.isArray(p?.sellingPoints) ? p.sellingPoints : 
-         (typeof p?.sellingPoints === 'string' ? p.sellingPoints.split(',').map((s: string) => s.trim()) : [])) ?? [],
-      pros: p?.pros ?? att?.pros ?? '',
-      cons: p?.cons ?? att?.cons ?? '',
-      rawReview: p?.raw_review ?? p?.rawReview ?? att?.raw_review ?? '',
-      insightSummary: p?.insight_summary ?? p?.insightSummary ?? att?.insight_summary ?? '',
-      search_keywords: p?.search_keywords ?? att?.search_keywords ?? ''
+
+    const get = (key: string, alt?: string): string => {
+      const v = (att as any)?.[key] ?? (p as any)?.[key] ?? (att as any)?.[alt ?? ''] ?? (p as any)?.[alt ?? ''];
+      return v != null && v !== '' ? String(v) : '';
     };
-    
-    Object.entries(att).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && base[k] === undefined) {
-        base[k] = v;
+    const getArr = (key: string, alt?: string): string[] => {
+      const v = (att as any)?.[key] ?? (p as any)?.[key] ?? (att as any)?.[alt ?? ''] ?? (p as any)?.[alt ?? ''];
+      if (Array.isArray(v)) return v.map((s: unknown) => String(s)).filter(Boolean);
+      if (typeof v === 'string' && v) return v.split(',').map((s: string) => s.trim()).filter(Boolean);
+      return [];
+    };
+
+    const base: Record<string, any> = { ...product };
+    base.linkUrl = get('linkUrl', 'link_url');
+    base.mainImage = (p?.mainImage ?? (att as any)?.mainImage ?? (att as any)?.main_image ?? '') as string;
+    base.period = get('period') || (p?.period ?? (att as any)?.period ?? '');
+    CONTENT_FIELDS.forEach(f => {
+      const v = (att as any)?.[f.id] ?? (p as any)?.[f.id];
+      if (f.id === 'selling_points') {
+        const arr = getArr('selling_points', 'sellingPoints');
+        base.selling_points = arr.length ? arr.join(', ') : (typeof v === 'string' ? v : Array.isArray(v) ? (v as string[]).join(', ') : '');
+        base.sellingPoints = base.selling_points ? base.selling_points.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+      } else {
+        base[f.id] = v != null && v !== '' ? (typeof v === 'object' && !Array.isArray(v) ? JSON.stringify(v) : String(v)) : '';
       }
     });
-    
+    if (base.insight_summary) base.insightSummary = base.insight_summary;
+
+    Object.entries(att).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && base[k] === undefined) base[k] = v;
+    });
+
     setFormData(base);
   }, [product]);
 
@@ -124,10 +146,6 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({ product, cat
     
     try {
       const activeCat = categories.find(c => c.id === product?.categoryId);
-      const sellingPointsVal = Array.isArray(formData.sellingPoints)
-        ? formData.sellingPoints.join(', ')
-        : (formData.sellingPoints?.trim?.() || '');
-      
       const updateData: Record<string, any> = {
         categoryId: formData.categoryId || product.categoryId,
         brand: formData.brand?.trim() || '',
@@ -140,29 +158,20 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({ product, cat
         monthlySales: Number(formData.monthlySales) || 0,
         linkUrl: formData.linkUrl?.trim() || '',
         mainImage: (typeof formData.mainImage === 'string' ? formData.mainImage.trim() : formData.mainImage) || '',
-        sellingPoints: sellingPointsVal,
-        pros: formData.pros?.trim() || '',
-        cons: formData.cons?.trim() || '',
-        raw_review: (formData.raw_review ?? formData.rawReview)?.trim?.() || '',
-        insight_summary: (formData.insight_summary ?? formData.insightSummary)?.trim?.() || '',
-        search_keywords: (formData.search_keywords ?? '')?.trim?.() || ''
+        period: formData.period?.trim?.() || '',
       };
-      
-      // 保留品类动态字段（排除固定字段和重复字段）
-      const EDIT_FIXED_IDS = ['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','selling_points','pros','cons','proPoints','conPoints','rawReview','raw_review','insightSummary','insight_summary','search_keywords','categoryId'];
+      CONTENT_FIELDS.forEach(f => {
+        const v = formData[f.id];
+        if (f.id === 'selling_points') {
+          updateData.selling_points = Array.isArray(v) ? (v as string[]).join(', ') : (typeof v === 'string' ? v : '')?.trim?.() || '';
+        } else {
+          updateData[f.id] = (v != null && v !== '' ? String(v).trim() : '') || '';
+        }
+      });
+
+      const EDIT_FIXED_IDS = ['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','period','categoryId', ...CONTENT_FIELD_IDS];
       activeCat?.fields?.forEach(f => {
-        if (!f?.id || !f?.name) return;
-        // 排除固定字段 ID
-        if (EDIT_FIXED_IDS.includes(f.id)) return;
-        // 排除好评/差评相关字段
-        const id = f.id.toLowerCase();
-        const name = (f.name || '').toLowerCase();
-        if (['pros', 'cons', 'propoints', 'conpoints'].includes(id) || 
-            /好评|差评|pros|cons|good.*review|bad.*review/i.test(name)) return;
-        // 排除搜索关键词字段
-        if (id === 'search_keywords' || id === 'searchkeywords' || 
-            /搜索关键词|search.*keyword/i.test(name)) return;
-        // 保存动态字段值
+        if (!f?.id || !f?.name || EDIT_FIXED_IDS.includes(f.id) || CONTENT_FIELD_IDS.includes(f.id)) return;
         const val = formData[f.id] ?? product?.[f.id] ?? product?.attributes?.[f.id];
         if (val !== undefined && val !== null) updateData[f.id] = val;
       });
@@ -206,31 +215,11 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({ product, cat
   };
 
   const activeCat = categories.find(c => c.id === product?.categoryId);
-  const FIXED_IDS = ['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','sellingPoints','selling_points','pros','cons','proPoints','conPoints','rawReview','raw_review','insightSummary','insight_summary','search_keywords','categoryId'];
-  // 严格过滤掉好评/差评/搜索关键词相关字段（避免与固定字段重复）
-  // 检查字段 ID 和名称，确保完全排除
-  const isProsConsLike = (f: ProductField) => {
-    if (!f?.id || !f?.name) return false;
-    const id = f.id.toLowerCase();
-    const name = (f.name || '').toLowerCase();
-    return ['pros', 'cons', 'propoints', 'conpoints'].includes(id) || 
-           /好评|差评|pros|cons|good.*review|bad.*review/i.test(name);
-  };
-  const isSearchKeywordsLike = (f: ProductField) => {
-    if (!f?.id || !f?.name) return false;
-    const id = f.id.toLowerCase();
-    const name = (f.name || '').trim().toLowerCase();
-    return id === 'search_keywords' || id === 'searchkeywords' || 
-           /搜索关键词|search.*keyword/i.test(name) || name === '搜索关键词';
-  };
-  // 只展示「非固定、非好评/差评/搜索关键词」的品类字段，避免与上方固定表单项重复
+  const FIXED_IDS = ['brand','model','channel','shopName','price','actualPrice','monthlySales','rating','linkUrl','mainImage','period','categoryId', ...CONTENT_FIELD_IDS];
   const dynFields = (activeCat?.fields ?? []).filter(f => {
     if (!f?.id || !f?.name) return false;
     if (FIXED_IDS.includes(f.id)) return false;
-    if (isProsConsLike(f)) return false;
-    if (isSearchKeywordsLike(f)) return false;
-    const n = (f.name || '').trim();
-    if (n === '好评' || n === '差评' || n === '搜索关键词') return false;
+    if (CONTENT_FIELD_IDS.includes(f.id)) return false;
     return true;
   });
 
@@ -335,6 +324,16 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({ product, cat
               />
             </div>
             
+            <div className="space-y-3">
+              <label className="text-xs font-black text-slate-600 uppercase">{t('record_date')}</label>
+              <input 
+                type="date"
+                className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40"
+                value={formData.period ?? ''}
+                onChange={e => setFormData({...formData, period: e.target.value})}
+              />
+            </div>
+            
             <div className="space-y-3 md:col-span-2">
               <label className="text-xs font-black text-slate-600 uppercase">{t('link_url')}</label>
               <input 
@@ -345,65 +344,56 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({ product, cat
               />
             </div>
             
-            <div className="space-y-3 md:col-span-2">
-              <label className="text-xs font-black text-slate-600 uppercase">{t('sell_points')}</label>
-              <input 
-                type="text"
-                className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40"
-                value={Array.isArray(formData.sellingPoints) ? formData.sellingPoints.join(', ') : formData.sellingPoints || ''}
-                onChange={e => setFormData({...formData, sellingPoints: e.target.value.split(',').map(s => s.trim()).filter(s => s)})}
-              />
-            </div>
-            
-            <div className="space-y-3 md:col-span-2">
-              <label className="text-xs font-black text-slate-600 uppercase">{t('pros')}</label>
-              <textarea 
-                className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40 resize-none"
-                rows={3}
-                value={formData.pros || ''}
-                onChange={e => setFormData({...formData, pros: e.target.value})}
-              />
-            </div>
-            
-            <div className="space-y-3 md:col-span-2">
-              <label className="text-xs font-black text-slate-600 uppercase">{t('cons')}</label>
-              <textarea 
-                className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40 resize-none"
-                rows={3}
-                value={formData.cons || ''}
-                onChange={e => setFormData({...formData, cons: e.target.value})}
-              />
-            </div>
-            
-            <div className="space-y-3 md:col-span-2">
-              <label className="text-xs font-black text-slate-600 uppercase">{t('pain_point')}</label>
-              <textarea 
-                className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40 resize-none"
-                rows={2}
-                value={formData.raw_review ?? formData.rawReview ?? ''}
-                onChange={e => setFormData({...formData, rawReview: e.target.value, raw_review: e.target.value})}
-              />
-            </div>
-            
-            <div className="space-y-3 md:col-span-2">
-              <label className="text-xs font-black text-slate-600 uppercase">{t('insight_summary')}</label>
-              <textarea 
-                className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40 resize-none"
-                rows={4}
-                value={formData.insight_summary ?? formData.insightSummary ?? ''}
-                onChange={e => setFormData({...formData, insightSummary: e.target.value, insight_summary: e.target.value})}
-              />
-            </div>
-            
-            <div className="space-y-3 md:col-span-2">
-              <label className="text-xs font-black text-slate-600 uppercase">搜索关键词</label>
-              <textarea 
-                className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40 resize-none"
-                rows={2}
-                value={formData.search_keywords ?? ''}
-                onChange={e => setFormData({...formData, search_keywords: e.target.value})}
-              />
-            </div>
+            {/* 自定义字段：容量、快充协议、重量、尺寸、LED、输入/输出端口、好评、差评、搜索关键词、核心卖点、产品洞察 */}
+            {CONTENT_FIELDS.map(f => {
+              const isSellingPoints = f.id === 'selling_points';
+              const val = isSellingPoints
+                ? (Array.isArray(formData.sellingPoints) ? formData.sellingPoints.join(', ') : (formData.selling_points ?? formData.sellingPoints ?? ''))
+                : (formData[f.id] ?? '');
+              const isWide = f.type === FieldType.TEXTAREA;
+              const isInsight = f.id === 'insight_summary';
+              return (
+                <div key={f.id} className={`space-y-3 ${isWide ? 'md:col-span-2' : ''}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-black text-slate-600 uppercase">{f.name}</label>
+                    {isInsight && (
+                      <button
+                        type="button"
+                        disabled={isGeneratingInsight}
+                        onClick={async () => {
+                          setInsightError(null);
+                          setIsGeneratingInsight(true);
+                          try {
+                            const summary = simplifyForAI({ ...product, ...formData } as Record<string, unknown>);
+                            const prompt = `${LANG_INSTRUCTION[language]}\n\nProduct: ${JSON.stringify(summary)}`;
+                            const text = await callGemini(prompt);
+                            setFormData(prev => ({ ...prev, insight_summary: text, insightSummary: text }));
+                          } catch (e: any) {
+                            setInsightError(e?.message || t('generate_insight_failed'));
+                          } finally {
+                            setIsGeneratingInsight(false);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/20 border border-purple-500/40 text-purple-300 text-[10px] font-black uppercase tracking-wider hover:bg-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      >
+                        {isGeneratingInsight ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
+                        {isGeneratingInsight ? t('generating') : t('generate_insight')}
+                      </button>
+                    )}
+                  </div>
+                  {isInsight && insightError && <p className="text-[10px] text-red-400">{insightError}</p>}
+                  {f.type === FieldType.NUMBER && (
+                    <input type="number" step="any" className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40" value={val} onChange={e => setFormData({...formData, [f.id]: e.target.value === '' ? '' : Number(e.target.value)})} />
+                  )}
+                  {f.type === FieldType.TEXTAREA && (
+                    <textarea className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40 resize-none min-h-[80px]" rows={isInsight ? 4 : 2} value={val} onChange={e => setFormData({...formData, [f.id]: e.target.value, ...(f.id === 'insight_summary' ? { insightSummary: e.target.value } : {}), ...(isSellingPoints ? { sellingPoints: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) } : {})})} />
+                  )}
+                  {f.type === FieldType.TEXT && (
+                    <input type="text" className="w-full bg-slate-950 border border-white/5 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-orange-500/40" value={val} onChange={e => setFormData({...formData, [f.id]: e.target.value})} />
+                  )}
+                </div>
+              );
+            })}
             
             {/* 品类动态字段 */}
             {dynFields.length > 0 && (

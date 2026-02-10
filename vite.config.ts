@@ -262,7 +262,49 @@ export default defineConfig(({ mode }) => {
               });
             });
           }
-        }] : [])
+        }] : []),
+        // 开发环境 /api/gemini 代理（与 Vercel api/gemini.ts 行为一致）
+        {
+          name: 'gemini-proxy',
+          configureServer(server: any) {
+            const geminiKey = env.GEMINI_API_KEY;
+            server.middlewares.use('/api/gemini', (req: any, res: any, next: () => void) => {
+              if (req.method !== 'POST') return next();
+              let body = '';
+              req.on('data', (c: string) => body += c);
+              req.on('end', async () => {
+                try {
+                  if (!geminiKey?.trim()) {
+                    res.statusCode = 503;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: 'AI 服务未配置 GEMINI_API_KEY' } }));
+                    return;
+                  }
+                  const { model = 'gemini-2.0-flash', contents } = JSON.parse(body || '{}') || {};
+                  if (!Array.isArray(contents) || contents.length === 0) {
+                    res.statusCode = 400;
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ error: { message: '请提供 contents 数组' } }));
+                    return;
+                  }
+                  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': geminiKey.trim() },
+                    body: JSON.stringify({ contents }),
+                  });
+                  const data = await r.json().catch(() => ({}));
+                  res.statusCode = r.status;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify(data));
+                } catch (e: any) {
+                  res.statusCode = 500;
+                  res.setHeader('Content-Type', 'application/json');
+                  res.end(JSON.stringify({ error: { message: e?.message || 'AI 请求失败' } }));
+                }
+              });
+            });
+          },
+        },
       ],
       define: {
         // Supabase 配置仍需注入前端（公开信息，非敏感）

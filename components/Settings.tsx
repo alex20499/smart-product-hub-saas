@@ -6,7 +6,7 @@ import {
   ArrowUp, ArrowDown, Package
 } from 'lucide-react';
 import { Category, ProductField, FieldType } from '../types';
-import { CATEGORY_SPECIFIC_FIELDS } from '../constants';
+import { CATEGORY_SPECIFIC_FIELDS, CORE_FIELD_IDS, CORE_FIELDS, getCoreLabelKey, DETAIL_PAGE_CONTENT_FIELD_IDS } from '../constants';
 
 interface SettingsProps {
   categories: Category[];
@@ -32,6 +32,12 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   const selectedCategory = categories.find(c => c.id === selectedCategoryId);
+  // 固定字段与 DIY 分离；节点定义只展示与详情页一致的 6 个内容字段，避免重复和多余
+  const allFields = selectedCategory?.fields ?? [];
+  const coreFields = allFields.filter(f => CORE_FIELD_IDS.includes(f.id));
+  const diyFields = allFields.filter(
+    f => !CORE_FIELD_IDS.includes(f.id) && DETAIL_PAGE_CONTENT_FIELD_IDS.includes(f.id)
+  );
 
   const addCategory = () => {
     if (!canEdit || !newCatName.trim()) return;
@@ -80,21 +86,17 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
     setIsEditing(null);
   };
 
-  // 精准按钮排序逻辑
-  const moveField = (index: number, direction: 'up' | 'down') => {
+  // 精准按钮排序逻辑（仅对 DIY 字段排序，固定字段保持在前不参与）
+  const moveField = (diyIndex: number, direction: 'up' | 'down') => {
     if (!selectedCategory) return;
-    const newFields = [...(selectedCategory.fields ?? [])];
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    
-    if (targetIndex < 0 || targetIndex >= newFields.length) return;
-    
-    // 互换位置
-    [newFields[index], newFields[targetIndex]] = [newFields[targetIndex], newFields[index]];
-    
+    const targetDiyIndex = direction === 'up' ? diyIndex - 1 : diyIndex + 1;
+    if (targetDiyIndex < 0 || targetDiyIndex >= diyFields.length) return;
+    const newDiy = [...diyFields];
+    [newDiy[diyIndex], newDiy[targetDiyIndex]] = [newDiy[targetDiyIndex], newDiy[diyIndex]];
+    const newFields = [...coreFields, ...newDiy];
     onUpdateCategories(categories.map(c => c.id === selectedCategoryId ? { ...c, fields: newFields } : c));
   };
 
-  // 拖拽逻辑实现 (保留并优化)
   const onDragStart = (index: number) => {
     setDraggedIndex(index);
   };
@@ -102,13 +104,11 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
   const onDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
     if (draggedIndex === null || draggedIndex === index) return;
-    
-    const newFields = [...(selectedCategory?.fields || [])];
-    const draggedItem = newFields[draggedIndex];
-    newFields.splice(draggedIndex, 1);
-    newFields.splice(index, 0, draggedItem);
-    
+    const newDiy = [...diyFields];
+    const [dragged] = newDiy.splice(draggedIndex, 1);
+    newDiy.splice(index, 0, dragged);
     setDraggedIndex(index);
+    const newFields = [...coreFields, ...newDiy];
     onUpdateCategories(categories.map(c => c.id === selectedCategoryId ? { ...c, fields: newFields } : c));
   };
 
@@ -183,29 +183,19 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                    </div>
                 </div>
                 
-                {/* 显示核心字段列表，但不可编辑 */}
+                {/* 显示核心字段列表（来自 fieldDefinitions，不可编辑） */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                   {['brand', 'model', 'linkUrl', 'channel', 'shopName', 'price', 'actualPrice', 'monthlySales', 'rating', 'mainImage'].map((fieldId) => {
-                      const fieldNames: Record<string, string> = {
-                        brand: t('brand'),
-                        model: t('model'),
-                        linkUrl: t('link_url'),
-                        channel: t('channel'),
-                        shopName: t('shop_name'),
-                        price: t('price'),
-                        actualPrice: t('actual_price'),
-                        monthlySales: t('monthly_sales'),
-                        rating: t('rating'),
-                        mainImage: t('main_image')
-                      };
+                   {CORE_FIELDS.map((field) => {
+                      const labelKey = getCoreLabelKey(field.id);
+                      const label = t(labelKey);
                       return (
-                        <div key={fieldId} className="flex items-center gap-3 p-3 bg-slate-800/30 rounded-xl border border-white/5">
+                        <div key={field.id} className="flex items-center gap-3 p-3 bg-slate-800/30 rounded-xl border border-white/5">
                            <div className="size-8 bg-slate-900 rounded-lg flex items-center justify-center">
                               <Database size={14} className="text-slate-600" />
                            </div>
                            <div className="flex-1">
-                              <p className="text-[10px] font-black text-white uppercase tracking-widest">{fieldNames[fieldId]}</p>
-                              <p className="text-[8px] text-slate-500 uppercase tracking-widest">{fieldId}</p>
+                              <p className="text-[10px] font-black text-white uppercase tracking-widest">{label}</p>
+                              <p className="text-[8px] text-slate-500 uppercase tracking-widest">{field.id}</p>
                            </div>
                            <div className="px-2 py-1 bg-[#A3E635]/10 border border-[#A3E635]/20 rounded-md">
                               <span className="text-[8px] font-black text-[#A3E635] uppercase">{t('fixed')}</span>
@@ -226,7 +216,7 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                       <p className="text-[8px] font-black text-slate-600 uppercase tracking-widest mt-1">{t('category_specific_hint', { name: selectedCategory?.name || '' })}</p>
                    </div>
                 </div>
-               {(selectedCategory?.fields ?? []).map((field, index) => (
+               {diyFields.map((field, index) => (
                  <div 
                    key={field.id} 
                    draggable={!isEditing}
@@ -252,8 +242,8 @@ export const Settings: React.FC<SettingsProps> = ({ categories, onUpdateCategori
                              </button>
                              <button 
                                onClick={() => moveField(index, 'down')} 
-                               disabled={index === ((selectedCategory?.fields ?? []).length - 1)}
-                               className={`p-1 rounded-md transition-all ${index === ((selectedCategory?.fields ?? []).length - 1) ? 'text-slate-900 cursor-not-allowed' : 'text-slate-600 hover:text-[#A3E635] hover:bg-white/5'}`}
+                               disabled={index === diyFields.length - 1}
+                               className={`p-1 rounded-md transition-all ${index === diyFields.length - 1 ? 'text-slate-900 cursor-not-allowed' : 'text-slate-600 hover:text-[#A3E635] hover:bg-white/5'}`}
                              >
                                <ArrowDown size={14} />
                              </button>
